@@ -1,0 +1,161 @@
+// ─────────────────────────────────────────────────────────────
+// IEP GEN — Database Schema
+//
+// 🔑 หลักคิดในการออกแบบ:
+// 1. PII BOUNDARY — เก็บข้อมูลส่วนบุคคลของนักเรียนใน DB ได้ (โรงเรียนถือข้อมูลนี้
+//    อยู่แล้วตามกฎหมาย และจำเป็นสำหรับ export เอกสารทางการ) แต่ข้อมูลใน
+//    บล็อก "PII ZONE" ด้านล่างห้ามถูกส่งไปยัง LLM API เด็ดขาด
+//    → บังคับด้วย lib/pii-guard.ts ไม่ใช่แค่ความจำของ dev
+// 2. เก็บทั้ง aiOriginal และ finalText → ระบบบันทึกอัตโนมัติว่าครูแก้อะไรบ้าง
+//    (= หลักฐานสำหรับใบสมัคร ไม่ต้องมานั่งจดมือ)
+// 3. แยก Assessment ออกจาก Plan → เก็บพัฒนาการเด็กข้ามปีได้
+//    (ตอบโจทย์กฎหมายที่บังคับให้ทบทวนแผนปีละครั้ง)
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── นักเรียน ────────────────────────────────────────────────
+model Student {
+  id   String @id @default(cuid())
+  /// รหัสอ้างอิงที่ครูตั้งเอง เช่น "A-01" — ใช้แสดงผลในระบบและส่งไป LLM ได้
+  code String @unique
+
+  // ══════════════ 🔒 PII ZONE — ห้ามส่งไป LLM API ══════════════
+  // ใช้เฉพาะตอน export เอกสาร .docx เท่านั้น
+  // ทุก field ในบล็อกนี้ต้องอยู่ใน PII_FIELDS ของ lib/pii-guard.ts
+  /// ชื่อ-นามสกุลจริง เช่น "เด็กชายสมชาย ใจดี"
+  fullName        String?
+  /// เลขประจำตัวประชาชน 13 หลัก
+  nationalId      String?
+  /// เลขทะเบียนคนพิการ (ถ้ามี)
+  disabilityCardNo String?
+  /// วันเดือนปีเกิด เก็บเป็น string ตามที่กรอกในฟอร์ม เช่น "5 ต.ค. 2561"
+  birthDate       String?
+  religion        String?
+  /// ลักษณะความพิการแบบละเอียด (ข้อความอิสระจากครู)
+  disabilityDetail String?
+  fatherName      String?
+  motherName      String?
+  guardianName    String?
+  /// ความเกี่ยวข้องของผู้ปกครอง เช่น "มารดา"
+  guardianRelation String?
+  address         String?
+  phone           String?
+  schoolName      String?
+  /// สังกัด เช่น "สพป.ชร.เขต1"
+  affiliation     String?
+  /// ข้อมูลทางการแพทย์ (โรคประจำตัว แพ้ยา ผลตรวจ ฯลฯ)
+  medicalNote     String?
+  /// ประวัติการศึกษาที่ผ่านมา
+  educationHistory String?
+  // ══════════════ จบ PII ZONE ══════════════
+
+  gradeLevel     String?
+  disabilityType String
+  /// บริบทเพิ่มเติมที่ไม่ระบุตัวตน เช่น "เข้าเรียนกลางเทอม"
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assessments Assessment[]
+  plans       Plan[]
+
+  @@index([disabilityType])
+}
+
+// ── การประเมินความสามารถ (แยกจาก Plan เพื่อเก็บพัฒนาการข้ามปี) ──
+model Assessment {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  /// { "reading": "cannot_spell_2syllable", "communication": "no_speech_gesture_only" }
+  abilityLevels Json
+  /// จุดเด่น/สิ่งที่ทำได้
+  strengths     String?
+
+  assessedAt DateTime @default(now())
+
+  plans Plan[]
+
+  @@index([studentId])
+}
+
+// ── แผน IEP หนึ่งฉบับ ────────────────────────────────────────
+model Plan {
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+
+  /// ปีการศึกษา เช่น "2569"
+  academicYear String
+  /// ภาคเรียน "1" | "2"
+  term         String
+
+  /// draft = ยังแก้อยู่ | finalized = ครูยืนยันแล้ว
+  status String @default("draft")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  /// เวลาที่ครูกดยืนยัน → createdAt ถึง finalizedAt = เวลาที่ใช้ทำแผนจริง
+  finalizedAt DateTime?
+
+  goals PlanGoal[]
+  media PlanMedia[]
+
+  @@index([studentId])
+  @@index([status])
+}
+
+// ── เป้าหมายเชิงพฤติกรรม ─────────────────────────────────────
+model PlanGoal {
+  id     String @id @default(cuid())
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// ⚠️ ข้อความที่ AI ร่างครั้งแรก — ห้ามแก้ ใช้เทียบว่าครูแก้อะไรบ้าง
+  aiOriginal String
+  /// ข้อความหลังครูแก้ (ถ้าไม่แก้ = เท่ากับ aiOriginal)
+  finalText  String
+
+  criterion String?
+  timeframe String?
+
+  /// ครูเลือกเป้าหมายข้อนี้ไปใช้จริงหรือไม่
+  isSelected Boolean @default(false)
+  orderIndex Int     @default(0)
+
+  @@index([planId])
+}
+
+// ── สื่อ/สิ่งอำนวยความสะดวก (บัญชี ก/ข) ──────────────────────
+model PlanMedia {
+  id     String @id @default(cuid())
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// ชื่อสื่อ — มาจาก mappingTable.json เท่านั้น ไม่ใช่ AI คิดเอง
+  item     String
+  /// "ก" หรือ "ข"
+  category String
+
+  /// เหตุผลที่ AI ร่างครั้งแรก
+  aiReason    String
+  /// เหตุผลหลังครูแก้
+  finalReason String
+
+  /// ครูยืนยันว่าจะเบิกจริงหรือไม่
+  isApproved Boolean @default(true)
+
+  @@index([planId])
+}

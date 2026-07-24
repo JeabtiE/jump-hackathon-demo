@@ -5,10 +5,11 @@
  * ทั้งคู่ยึด type ในนี้เป็นหลัก จะได้ทำงานคู่ขนานได้โดยไม่ต้องรอกัน
  */
 
-// ─────────────────────────────────────────────
-// ประเภทความพิการ 9 ประเภทตาม สพฐ.
-// รอบ MVP ทำเฉพาะที่แม่ต้องใช้จริง — ที่เหลือใส่ไว้เผื่ออนาคต
-// ─────────────────────────────────────────────
+// ═════════════════════════════════════════════
+// DOMAIN TYPES
+// ═════════════════════════════════════════════
+
+/** ประเภทความพิการ 9 ประเภทตาม สพฐ. */
 export type DisabilityType =
   | "visual"        // บกพร่องทางการเห็น
   | "hearing"       // บกพร่องทางการได้ยิน
@@ -20,87 +21,200 @@ export type DisabilityType =
   | "autism"        // ออทิสติก
   | "multiple";     // พิการซ้อน
 
-// ─────────────────────────────────────────────
-// ด้านความสามารถที่ประเมิน
-// value เป็น string key ที่ต้องตรงกับ key ใน data/mappingTable.json
-// ─────────────────────────────────────────────
+/** ด้านความสามารถที่ประเมิน — value ต้องตรงกับ key ใน data/mappingTable.json */
 export interface AbilityLevels {
-  reading?: string;        // การอ่าน
-  writing?: string;        // การเขียน
-  math?: string;           // การคำนวณ
-  communication?: string;  // การสื่อสาร
-  behavior?: string;       // พฤติกรรม
-  selfHelp?: string;       // การช่วยเหลือตนเอง
+  reading?: string;
+  writing?: string;
+  math?: string;
+  communication?: string;
+  behavior?: string;
+  selfHelp?: string;
 }
 
-// ─────────────────────────────────────────────
-// REQUEST: Frontend → POST /api/generate
-// ─────────────────────────────────────────────
-export interface GenerateRequest {
+export type MediaCategory = "ก" | "ข";
+export type PlanStatus = "draft" | "finalized";
+
+// ═════════════════════════════════════════════
+// API: นักเรียน
+// ═════════════════════════════════════════════
+
+/**
+ * ข้อมูลส่วนบุคคลของนักเรียน
+ *
+ * 🔒 PII ZONE — เก็บใน DB ได้ ใช้ตอน export เอกสารเท่านั้น
+ *    ห้ามส่ง field ในนี้ไป LLM API เด็ดขาด (บังคับโดย lib/pii-guard.ts)
+ */
+export interface StudentPII {
+  /** ชื่อ-นามสกุลจริง เช่น "เด็กชายสมชาย ใจดี" */
+  fullName?: string;
+  /** เลขประจำตัวประชาชน 13 หลัก */
+  nationalId?: string;
+  /** เลขทะเบียนคนพิการ */
+  disabilityCardNo?: string;
+  /** วันเดือนปีเกิด เช่น "5 ต.ค. 2561" */
+  birthDate?: string;
+  religion?: string;
+  /** ลักษณะความพิการแบบละเอียด */
+  disabilityDetail?: string;
+  fatherName?: string;
+  motherName?: string;
+  guardianName?: string;
+  /** ความเกี่ยวข้อง เช่น "มารดา" */
+  guardianRelation?: string;
+  address?: string;
+  phone?: string;
+  schoolName?: string;
+  /** สังกัด เช่น "สพป.ชร.เขต1" */
+  affiliation?: string;
+  /** ข้อมูลทางการแพทย์ */
+  medicalNote?: string;
+  /** ประวัติการศึกษาที่ผ่านมา */
+  educationHistory?: string;
+}
+
+/** POST /api/students */
+export interface CreateStudentRequest extends StudentPII {
+  /** รหัสอ้างอิงที่ครูตั้งเอง เช่น "A-01" */
+  code: string;
   disabilityType: DisabilityType;
-  abilityLevels: AbilityLevels;
-  /** จุดเด่น/สิ่งที่เด็กทำได้ (optional, free text สั้นๆ) */
-  strengths?: string;
-  /** ระดับชั้น เช่น "ป.2" */
   gradeLevel?: string;
+  note?: string;
 }
 
-// ─────────────────────────────────────────────
-// RESPONSE: API → Frontend
-// ─────────────────────────────────────────────
+/** PATCH /api/students/[id] */
+export type UpdateStudentRequest = Partial<CreateStudentRequest>;
 
-/** เป้าหมายเชิงพฤติกรรม — ระบบเสนอ 2-3 ตัวเลือกให้ครูเลือก */
-export interface IEPGoal {
+/** GET /api/students — รายการนักเรียน (ไม่รวม PII เพื่อลดการส่งข้อมูลโดยไม่จำเป็น) */
+export interface StudentSummary {
   id: string;
-  /** ข้อความเป้าหมายเต็ม พร้อมใช้ copy ไปวางในระบบ SET */
-  text: string;
-  /** เกณฑ์วัดผล เช่น "8 ใน 10 ครั้ง" */
-  criterion: string;
-  /** กรอบเวลา เช่น "ภายในภาคเรียนนี้" */
-  timeframe: string;
+  code: string;
+  /** ชื่อจริง — ส่งมาเพื่อให้ครูเลือกนักเรียนได้สะดวก */
+  fullName: string | null;
+  disabilityType: DisabilityType;
+  gradeLevel: string | null;
+  planCount: number;
+  latestPlanAt: string | null;
 }
 
-/** สื่อ/สิ่งอำนวยความสะดวกที่แนะนำ — มาจาก mappingTable เท่านั้น ไม่ใช่ LLM คิดเอง */
-export interface MediaRecommendation {
-  /** ชื่อรายการสื่อ */
+/** GET /api/students/[id] — รายละเอียดเต็มรวม PII (ใช้ตอนแก้ไขข้อมูลนักเรียน) */
+export interface StudentDetail extends StudentPII {
+  id: string;
+  code: string;
+  disabilityType: DisabilityType;
+  gradeLevel: string | null;
+  note: string | null;
+}
+
+// ═════════════════════════════════════════════
+// API: สร้างแผน
+// ═════════════════════════════════════════════
+
+/**
+ * POST /api/plans
+ * flow: บันทึก assessment → retrieve สื่อจาก mappingTable → เรียก LLM → บันทึกลง DB
+ */
+export interface CreatePlanRequest {
+  studentId: string;
+  abilityLevels: AbilityLevels;
+  strengths?: string;
+  academicYear: string;
+  term: string;
+}
+
+export interface PlanGoalDTO {
+  id: string;
+  /** ข้อความที่ AI ร่างครั้งแรก (read-only ใช้เทียบว่าครูแก้อะไร) */
+  aiOriginal: string;
+  /** ข้อความปัจจุบัน (ครูแก้ได้) */
+  finalText: string;
+  criterion: string | null;
+  timeframe: string | null;
+  isSelected: boolean;
+  /** true ถ้าครูแก้ไขจากต้นฉบับ AI แล้ว */
+  isEdited: boolean;
+}
+
+export interface PlanMediaDTO {
+  id: string;
   item: string;
-  /** บัญชี ก หรือ ข */
-  category: "ก" | "ข";
-  /** เหตุผลประกอบการขอเบิก (LLM เขียน โดยอ้างอิงจากเป้าหมาย IEP) */
-  reason: string;
+  category: MediaCategory;
+  aiReason: string;
+  finalReason: string;
+  isApproved: boolean;
+  isEdited: boolean;
 }
 
-/** วิธีสอน IIP — nice to have ทำถ้าเวลาเหลือ */
-export interface IIPMethod {
+export interface PlanDTO {
   id: string;
-  text: string;
-  /** เชื่อมกับเป้าหมาย IEP ข้อไหน */
-  linkedGoalId: string;
+  studentCode: string;
+  /** ชื่อจริง — ใช้แสดงผลใน UI และ export (ไม่เคยส่งไป LLM) */
+  studentFullName: string | null;
+  disabilityType: DisabilityType;
+  gradeLevel: string | null;
+  academicYear: string;
+  term: string;
+  status: PlanStatus;
+  createdAt: string;
+  finalizedAt: string | null;
+  /** เวลาที่ใช้ทำแผน (วินาที) — คำนวณจาก createdAt → finalizedAt */
+  durationSeconds: number | null;
+  goals: PlanGoalDTO[];
+  media: PlanMediaDTO[];
+  consistencyWarnings: string[];
 }
 
-export interface GenerateResponse {
-  iepGoals: IEPGoal[];
-  mediaRecommendations: MediaRecommendation[];
-  iipMethods?: IIPMethod[];
-  /** จุดที่ระบบตรวจพบว่าอาจไม่สอดคล้องกัน — flag ให้ครูตัดสินใจ ไม่ auto-fix */
-  consistencyWarnings?: string[];
+// ═════════════════════════════════════════════
+// API: แก้ไข / ยืนยันแผน
+// ═════════════════════════════════════════════
+
+/** PATCH /api/plans/[id] */
+export interface UpdatePlanRequest {
+  goals?: { id: string; finalText?: string; isSelected?: boolean }[];
+  media?: { id: string; finalReason?: string; isApproved?: boolean }[];
+  /** ตั้งเป็น "finalized" เมื่อครูกดยืนยัน → ระบบบันทึก finalizedAt ให้ */
+  status?: PlanStatus;
 }
 
-/** เมื่อเกิด error ฝั่ง server */
+// ═════════════════════════════════════════════
+// API: สถิติสำหรับเก็บหลักฐาน (ใช้ตอนทำใบสมัคร)
+// ═════════════════════════════════════════════
+
+/** GET /api/stats */
+export interface UsageStats {
+  totalPlans: number;
+  finalizedPlans: number;
+  /** เวลาเฉลี่ยที่ใช้ทำแผน 1 ฉบับ (วินาที) */
+  avgDurationSeconds: number | null;
+  /** สัดส่วนเป้าหมายที่ครูแก้จากต้นฉบับ AI (%) */
+  goalEditRate: number;
+  /** สัดส่วนเหตุผลเบิกสื่อที่ครูแก้ (%) */
+  mediaEditRate: number;
+}
+
+// ═════════════════════════════════════════════
+// INTERNAL: mappingTable.json
+// ═════════════════════════════════════════════
+
+export interface MediaEntry {
+  item: string;
+  category: MediaCategory;
+  /** หลักการทางวิชาการสั้นๆ — ใช้เป็น context ให้ LLM */
+  rationale: string;
+}
+
+/** mappingTable[disabilityType][`${domain}.${level}`] = MediaEntry[] */
+export type MappingTable = Record<string, Record<string, MediaEntry[]>>;
+
+// ═════════════════════════════════════════════
+// INTERNAL: สิ่งที่ LLM ต้องคืนมา
+// ═════════════════════════════════════════════
+
+export interface LLMOutput {
+  iepGoals: { text: string; criterion: string; timeframe: string }[];
+  mediaRecommendations: { item: string; category: MediaCategory; reason: string }[];
+}
+
 export interface ErrorResponse {
   error: string;
   detail?: string;
 }
-
-// ─────────────────────────────────────────────
-// โครงสร้าง mappingTable.json (คน A ใช้)
-// ─────────────────────────────────────────────
-export interface MediaEntry {
-  item: string;
-  category: "ก" | "ข";
-  /** หลักการทางวิชาการสั้นๆ ว่าทำไมสื่อนี้ถึงเหมาะ — ใช้เป็น context ให้ LLM */
-  rationale: string;
-}
-
-/** mappingTable[disabilityType][abilityKey] = MediaEntry[] */
-export type MappingTable = Record<string, Record<string, MediaEntry[]>>;
