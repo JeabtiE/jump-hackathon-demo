@@ -5,18 +5,18 @@
 ### 1. Push โปรเจกต์ขึ้น GitHub
 
 ```bash
-cd iep-go
+cd iep-gen
 git init
 git add .
 git commit -m "init: project scaffold"
 git branch -M main
 
 # สร้าง repo บน github.com ก่อน (ตั้งเป็น Private) แล้ว:
-git remote add origin https://github.com/<username>/iep-go.git
+git remote add origin https://github.com/<username>/iep-gen.git
 git push -u origin main
 ```
 
-> หรือถ้ามี GitHub CLI: `gh repo create iep-go --private --source=. --push`
+> หรือถ้ามี GitHub CLI: `gh repo create iep-gen --private --source=. --push`
 
 ### 2. เชิญเพื่อนเข้ามาแก้ไขได้
 
@@ -34,7 +34,7 @@ git push -u origin main
 ### 3. เชื่อม Vercel
 
 ```
-vercel.com → Add New Project → Import Git Repository → เลือก iep-go
+vercel.com → Add New Project → Import Git Repository → เลือก iep-gen
 → Environment Variables → เพิ่ม ANTHROPIC_API_KEY
 → Deploy
 ```
@@ -47,8 +47,8 @@ vercel.com → Add New Project → Import Git Repository → เลือก iep
 
 ```bash
 # 1. Clone
-git clone https://github.com/<username>/iep-go.git
-cd iep-go
+git clone https://github.com/<username>/iep-gen.git
+cd iep-gen
 
 # 2. ติดตั้ง
 npm install
@@ -68,8 +68,8 @@ npm run dev
 
 | กฎ | เหตุผล |
 |---|---|
-| ❌ ห้าม push ตรงเข้า `main` | main = ตัวที่แม่ใช้งานจริง พังไม่ได้ |
-| ✅ ทำ branch เสมอ แล้วเปิด PR | Vercel สร้าง Preview URL ให้ทุก PR — ส่งให้แม่ทดลองได้โดยไม่กระทบตัวจริง |
+| ❌ ห้าม push ตรงเข้า `main` | main = ตัวที่ครูใช้งานจริง พังไม่ได้ |
+| ✅ ทำ branch เสมอ แล้วเปิด PR | Vercel สร้าง Preview URL ให้ทุก PR — ส่งให้ครูทดลองได้โดยไม่กระทบตัวจริง |
 | ✅ merge ได้เลยไม่ต้องรอ approve | ทีมเล็ก เวลาน้อย — แต่**ต้องบอกอีกคนใน chat ว่า merge อะไรไป** |
 | ✅ pull ก่อนเริ่มงานทุกครั้ง | ป้องกัน conflict |
 
@@ -109,22 +109,22 @@ data/xxx    เพิ่มข้อมูล       เช่น data/add-ld-map
 
 ❌ `update` / `fix bug` / `.` — ย้อนดูทีหลังไม่รู้ว่าคืออะไร
 
-
+---
 
 ## 📅 จังหวะการทำงาน
 
-บอกกันว่าวันนี้จะแตะไฟล์ไหน — ป้องกันชนกันตั้งแต่ต้น
+**เช้า (5 นาที):** บอกกันว่าวันนี้จะแตะไฟล์ไหน — ป้องกันชนกันตั้งแต่ต้น
 
-ทำงานบน branch ตัวเอง commit บ่อยๆ
+**ระหว่างวัน:** ทำงานบน branch ตัวเอง commit บ่อยๆ
 
-ทั้งคู่ merge เข้า main แล้ว**เปิด production URL ทดสอบด้วยกัน**
+**เย็น (สำคัญที่สุด):** ทั้งคู่ merge เข้า main แล้ว**เปิด production URL ทดสอบด้วยกัน**
 → ถ้าพัง แก้เลยวันนั้น อย่าปล่อยข้ามคืน
 
-
+---
 
 ## 🗂 ใครแตะไฟล์ไหน (ลด conflict)
 
-
+```
 คน A (domain + AI)          คน B (frontend + infra)
 ─────────────────────       ──────────────────────
 app/api/generate/route.ts   app/page.tsx
@@ -135,9 +135,9 @@ data/fewShotExamples.json   tailwind.config.ts
 
         ⚠️ lib/types.ts = ร่วมกัน
         แก้เมื่อไหร่ ต้องบอกอีกคนก่อนเสมอ
+```
 
-
-
+---
 
 ## ⚠️ ถ้าเจอ Merge Conflict
 
@@ -153,7 +153,7 @@ git push
 
 **ถ้าไม่แน่ใจว่าจะเก็บส่วนไหน — โทรหากันก่อน อย่าเดา** โดยเฉพาะ `lib/types.ts`
 
-
+---
 
 ## 🔐 ความปลอดภัย — ห้ามพลาด
 
@@ -168,7 +168,7 @@ git push
 2. สร้าง key ใหม่
 3. อย่าแค่ลบ commit — git history ยังเก็บไว้อยู่
 
-
+---
 
 ## 🧪 เช็คก่อน push ทุกครั้ง
 

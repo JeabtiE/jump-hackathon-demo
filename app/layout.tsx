@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IEP GO — ผู้ช่วยครูการศึกษาพิเศษ",
+  title: "IEP GEN — ผู้ช่วยครูการศึกษาพิเศษ",
   description: "กรอกข้อมูลนักเรียนครั้งเดียว รับเป้าหมาย IEP และรายการสื่อที่เบิกได้",
 };
 
