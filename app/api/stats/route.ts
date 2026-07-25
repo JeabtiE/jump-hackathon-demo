@@ -13,6 +13,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { UsageStats } from "@/lib/types";
 
+// ⚠️ ห้าม prerender — GET ไม่มี request param ทำให้ Next มองเป็น static
+// แล้ว freeze ตัวเลข ณ เวลา build สถิติหน้านี้คือหลักฐานการใช้งานจริง
+// สำหรับใบสมัคร ต้องดึงสดจาก DB ทุกครั้ง
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const [totalPlans, finalizedPlans, goals, media] = await Promise.all([

@@ -276,7 +276,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const buffer = await Packer.toBuffer(doc);
     const filename = `IEP_${s.code}_${plan.academicYear}_เทอม${plan.term}.docx`;
 
-    return new NextResponse(buffer, {
+    // แปลงเป็น Uint8Array เพราะ Buffer ของ @types/node 20.19+ ไม่ตรงกับ BodyInit แล้ว
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

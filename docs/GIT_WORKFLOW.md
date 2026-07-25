@@ -54,7 +54,8 @@ cd iep-gen
 npm install
 
 # 3. ตั้ง env (ใช้ mock ได้ ไม่ต้องมี API key)
-cp .env.example .env.local
+# ใช้ .env ไม่ใช่ .env.local — Prisma CLI (db:push) อ่านเฉพาะ .env
+cp .env.example .env
 
 # 4. รัน
 npm run dev
@@ -159,7 +160,7 @@ git push
 
 | สิ่งที่ห้าม | ผลที่ตามมา |
 |---|---|
-| commit `.env.local` | API key หลุด = โดนใช้จนเงินหมด (แม้ repo private ก็ไม่ควรเสี่ยง) |
+| commit `.env` | API key หลุด = โดนใช้จนเงินหมด (แม้ repo private ก็ไม่ควรเสี่ยง) |
 | ใส่ API key ใน client component | เห็นได้จาก browser devtools ทันที |
 | commit ข้อมูลเด็กจริง | ผิดหลัก PDPA — รวมถึงใน `fewShotExamples.json` ด้วย |
 
