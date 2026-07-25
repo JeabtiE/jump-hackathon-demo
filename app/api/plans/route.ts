@@ -11,6 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { retrieveMedia } from "@/lib/retrieval";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/prompts";
@@ -117,7 +118,9 @@ export async function POST(request: Request) {
     const assessment = await prisma.assessment.create({
       data: {
         studentId: student.id,
-        abilityLevels: body.abilityLevels ?? {},
+        // cast: AbilityLevels เป็น interface ที่ไม่มี index signature เลยไม่ตรงกับ
+        // InputJsonObject ของ Prisma โดยตรง — โครงสร้างจริงคือ Record<string, string>
+        abilityLevels: (body.abilityLevels ?? {}) as Prisma.InputJsonObject,
         strengths: body.strengths?.trim() || null,
       },
     });
@@ -133,7 +136,7 @@ export async function POST(request: Request) {
     const safePayload = buildLLMSafePayload({
       disabilityType: student.disabilityType,
       gradeLevel: student.gradeLevel,
-      abilityLevels: body.abilityLevels ?? {},
+      abilityLevels: (body.abilityLevels ?? {}) as Record<string, string>,
       strengths: body.strengths,
     });
 

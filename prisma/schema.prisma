@@ -18,7 +18,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // runtime: ผ่าน transaction pooler (6543) — เหมาะกับ serverless ของ Vercel
+  url       = env("DATABASE_URL")
+  // migrate/db push: ต้องต่อตรง (session pooler 5432) เพราะ PgBouncer
+  // ไม่รองรับ DDL + advisory lock → ถ้าใช้ 6543 คำสั่งจะค้างไม่จบ
+  directUrl = env("DIRECT_URL")
 }
 
 // ── นักเรียน ────────────────────────────────────────────────

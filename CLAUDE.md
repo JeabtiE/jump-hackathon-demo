@@ -220,7 +220,7 @@ The prompt in `lib/prompts.ts` instructs the model to always write `"นัก�
 
 - ❌ Never call the LLM API with anything other than the output of `buildLLMSafePayload()`
 - ❌ Never remove or bypass the `assertNoPII()` call in `app/api/plans/route.ts`
-- ❌ Never commit `.env.local` (contains DB credentials and API key)
+- ❌ Never commit `.env` (contains DB credentials and API key)
 - ❌ Never commit real student data — including in `data/fewShotExamples.json`. Anonymize first.
 - ❌ Never put an API key in a client component. All LLM calls go through `app/api/**`.
 - ❌ Never log PII (no `console.log(student)` — log IDs or codes instead)
@@ -238,14 +238,19 @@ The honest version of the claim is precise and stronger than "we don't store any
 
 The app runs without an LLM API key — `app/api/plans/route.ts` returns mock data when `ANTHROPIC_API_KEY` is absent or `USE_MOCK=true`. Developer B can build the entire UI without waiting for the AI layer.
 
-`DATABASE_URL` **is** required (Supabase or Neon free tier).
+`DATABASE_URL` **is** required (Supabase or Neon free tier), and so is `DIRECT_URL` for `db:push`.
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in DATABASE_URL
-npm run db:push              # create tables
+cp .env.example .env      # fill in DATABASE_URL + DIRECT_URL
+npm run db:push           # create tables
 npm run dev
 ```
+
+Env notes (learned the hard way):
+- Use **`.env`, not `.env.local`** — the Prisma CLI (`db:push`, `studio`) only reads `.env`; Next.js reads both, so one file covers everything.
+- `DATABASE_URL` goes through Supabase's transaction pooler (port 6543) and must end with `?pgbouncer=true&connection_limit=1`. `DIRECT_URL` (port 5432) is what `db:push`/migrations use — running DDL through the transaction pooler hangs indefinitely.
+- On Vercel, set **both** `DATABASE_URL` and `DIRECT_URL` as environment variables, or the deploy build fails.
 
 Before pushing: `npm run build` — if the build fails, Vercel can't deploy.
 

@@ -26,8 +26,9 @@ cd iep-gen
 npm install
 
 # 2. ตั้งค่า environment
-cp .env.example .env.local
-# เปิด .env.local ใส่ DATABASE_URL และ ANTHROPIC_API_KEY
+cp .env.example .env
+# เปิด .env ใส่ DATABASE_URL, DIRECT_URL และ ANTHROPIC_API_KEY (ถ้ามี)
+# 💡 ใช้ .env ไม่ใช่ .env.local — Prisma CLI (db:push) อ่านเฉพาะ .env
 
 # 3. สร้างตารางใน database
 npm run db:push
@@ -42,6 +43,9 @@ npm run dev
 
 **หา DATABASE_URL ฟรีได้จาก:** [Supabase](https://supabase.com) (แนะนำ) หรือ [Neon](https://neon.tech)
 → สมัคร → สร้าง project → Settings → Database → คัดลอก Connection string (URI)
+→ `DATABASE_URL` ใช้ port 6543 ต่อท้าย `?pgbouncer=true&connection_limit=1`,
+   `DIRECT_URL` ใช้ port 5432 (สำหรับ `db:push` — ดูคอมเมนต์ใน `.env.example`)
+→ ตอน deploy Vercel ต้องตั้ง env **ทั้งสองตัว** ไม่งั้น build fail
 
 **คำสั่งที่ใช้บ่อย:**
 ```bash
@@ -179,7 +183,7 @@ DB
 **กฎที่ห้ามละเมิด:**
 - ❌ ห้ามเรียก LLM ด้วยอย่างอื่นนอกจากผลลัพธ์ของ `buildLLMSafePayload()`
 - ❌ ห้ามลบ `assertNoPII()` ออกจาก `app/api/plans/route.ts`
-- ❌ ห้าม commit `.env.local` หรือข้อมูลเด็กจริง (รวมถึงใน `fewShotExamples.json`)
+- ❌ ห้าม commit `.env` หรือข้อมูลเด็กจริง (รวมถึงใน `fewShotExamples.json`)
 - ❌ ห้ามใส่ API key ใน client component
 - ❌ ห้าม log PII (อย่า `console.log(student)` — log แค่ id/code)
 
