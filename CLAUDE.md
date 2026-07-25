@@ -3,6 +3,11 @@
 > Read this file before answering any question about this codebase.
 > It contains context that is not obvious from the code alone.
 
+> 💡 **สำหรับทีม (Dev B):** ถ้าคุยกับ Claude บนเว็บ (claude.ai) แทน Claude Code
+> ให้ก้อปไฟล์นี้**ทั้งไฟล์**แปะเป็นข้อความแรกของบทสนทนา เพื่อให้ Claude เข้าใจ
+> โปรเจกต์ตรงกัน — ส่วน Claude Code อ่านไฟล์นี้อัตโนมัติอยู่แล้ว ไม่ต้องแปะ
+> (แทนที่ docs/CLUADE_INSTRUCTION.md เดิมซึ่งลบไปแล้วเพราะเนื้อหาซ้ำและเก่ากว่า)
+
 ---
 
 ## 1. What this project is
