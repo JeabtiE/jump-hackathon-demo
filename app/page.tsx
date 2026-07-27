@@ -43,10 +43,41 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
+      // ── เช็คว่านักเรียนคนนี้เคยมีแผนมาก่อนไหม ──
+      let committeeDefaults: {
+        principalName?: string;
+        responsibleTeacherName?: string;
+        homeroomTeacherName?: string;
+      } = {};
+
+      try {
+        const prevRes = await fetch(`/api/plans?studentId=${selected.id}`);
+        if (prevRes.ok) {
+          const prevPlans: PlanDTO[] = await prevRes.json();
+          if (prevPlans.length > 0) {
+            const latest = prevPlans.reduce((a, b) =>
+              new Date(a.createdAt) > new Date(b.createdAt) ? a : b,
+            );
+            committeeDefaults = {
+              principalName: latest.principalName,
+              responsibleTeacherName: latest.responsibleTeacherName,
+              homeroomTeacherName: latest.homeroomTeacherName,
+              // meetingDate ไม่เอามาด้วยตามสเปค — เว้นว่างไว้เสมอ
+            };
+          }
+        }
+      } catch {
+        // ดึงแผนเก่าไม่สำเร็จ ไม่เป็นไร ปล่อยว่างไว้ให้ครูกรอกเองตามปกติ
+      }
+
       const res = await fetch("/api/plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: selected.id, ...payload }),
+        body: JSON.stringify({
+          studentId: selected.id,
+          ...payload,
+          ...committeeDefaults,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -67,10 +98,14 @@ export default function Home() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900">IEP GEN</h1>
           <p className="mt-1 text-slate-600">
-            กรอกข้อมูลนักเรียนครั้งเดียว รับเป้าหมาย IEP และรายการสื่อที่เบิกได้ พร้อมเหตุผลประกอบ
+            กรอกข้อมูลนักเรียนครั้งเดียว รับเป้าหมาย IEP และรายการสื่อที่เบิกได้
+            พร้อมเหตุผลประกอบ
           </p>
         </div>
-        <a href="/stats" className="text-sm text-slate-400 hover:text-slate-600">
+        <a
+          href="/stats"
+          className="text-sm text-slate-400 hover:text-slate-600"
+        >
           สถิติการใช้งาน
         </a>
       </header>
@@ -123,7 +158,8 @@ export default function Home() {
       </div>
 
       <footer className="mt-12 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        ⚠️ ระบบนี้ช่วยร่างเอกสารเท่านั้น ครูต้องตรวจสอบและยืนยันก่อนนำไปใช้จริงเสมอ ·
+        ⚠️ ระบบนี้ช่วยร่างเอกสารเท่านั้น
+        ครูต้องตรวจสอบและยืนยันก่อนนำไปใช้จริงเสมอ ·
         ห้ามกรอกชื่อจริงหรือข้อมูลระบุตัวตนของนักเรียน
       </footer>
     </main>
