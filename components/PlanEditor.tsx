@@ -44,6 +44,11 @@ export default function PlanEditor({
 
   const selectedGoal = plan.goals.find((g) => g.isSelected);
   const isFinalized = plan.status === "finalized";
+  const missingCommitteeFields =
+    !plan.principalName ||
+    !plan.responsibleTeacherName ||
+    !plan.homeroomTeacherName ||
+    !plan.meetingDate;
 
   return (
     <div className="space-y-5">
@@ -62,7 +67,9 @@ export default function PlanEditor({
             </span>
           )}
           {savedAt && !saving && (
-            <span className="ml-2 text-xs text-slate-400">บันทึกล่าสุด {savedAt}</span>
+            <span className="ml-2 text-xs text-slate-400">
+              บันทึกล่าสุด {savedAt}
+            </span>
           )}
         </div>
 
@@ -70,8 +77,13 @@ export default function PlanEditor({
           {!isFinalized && (
             <button
               onClick={() => patch({ status: "finalized" })}
-              disabled={saving}
+              disabled={saving || missingCommitteeFields}
               className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:bg-slate-300"
+              title={
+                missingCommitteeFields
+                  ? "กรุณากรอกข้อมูลคณะกรรมการให้ครบก่อน"
+                  : undefined
+              }
             >
               ยืนยันแผน
             </button>
@@ -119,7 +131,10 @@ export default function PlanEditor({
                   checked={g.isSelected}
                   onChange={() =>
                     patch({
-                      goals: plan.goals.map((x) => ({ id: x.id, isSelected: x.id === g.id })),
+                      goals: plan.goals.map((x) => ({
+                        id: x.id,
+                        isSelected: x.id === g.id,
+                      })),
                     })
                   }
                   className="mt-1"
@@ -147,7 +162,9 @@ export default function PlanEditor({
 
               {g.isEdited && (
                 <details className="mt-2 text-xs text-slate-500">
-                  <summary className="cursor-pointer">ดูข้อความต้นฉบับที่ AI ร่าง</summary>
+                  <summary className="cursor-pointer">
+                    ดูข้อความต้นฉบับที่ AI ร่าง
+                  </summary>
                   <p className="mt-1 rounded bg-slate-50 p-2">{g.aiOriginal}</p>
                 </details>
               )}
@@ -159,12 +176,17 @@ export default function PlanEditor({
       {/* สื่อ/บัญชี ก-ข */}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-900">สื่อและสิ่งอำนวยความสะดวกที่เบิกได้</h3>
+          <h3 className="font-semibold text-slate-900">
+            สื่อและสิ่งอำนวยความสะดวกที่เบิกได้
+          </h3>
           <CopyButton
             label="คัดลอกทั้งหมด"
             text={plan.media
               .filter((m) => m.isApproved)
-              .map((m) => `${m.item} (บัญชี ${m.category})\nเหตุผล: ${m.finalReason}`)
+              .map(
+                (m) =>
+                  `${m.item} (บัญชี ${m.category})\nเหตุผล: ${m.finalReason}`,
+              )
               .join("\n\n")}
           />
         </div>
@@ -174,7 +196,9 @@ export default function PlanEditor({
             <div
               key={m.id}
               className={`rounded-lg border p-3 ${
-                m.isApproved ? "border-slate-200" : "border-slate-200 bg-slate-50 opacity-60"
+                m.isApproved
+                  ? "border-slate-200"
+                  : "border-slate-200 bg-slate-50 opacity-60"
               }`}
             >
               <div className="mb-2 flex items-center gap-2">
@@ -182,7 +206,9 @@ export default function PlanEditor({
                   type="checkbox"
                   checked={m.isApproved}
                   onChange={(e) =>
-                    patch({ media: [{ id: m.id, isApproved: e.target.checked }] })
+                    patch({
+                      media: [{ id: m.id, isApproved: e.target.checked }],
+                    })
                   }
                 />
                 <span className="font-medium text-slate-900">{m.item}</span>
@@ -199,7 +225,9 @@ export default function PlanEditor({
                 defaultValue={m.finalReason}
                 onBlur={(e) => {
                   if (e.target.value !== m.finalReason) {
-                    patch({ media: [{ id: m.id, finalReason: e.target.value }] });
+                    patch({
+                      media: [{ id: m.id, finalReason: e.target.value }],
+                    });
                   }
                 }}
                 rows={2}
@@ -207,6 +235,78 @@ export default function PlanEditor({
               />
             </div>
           ))}
+        </div>
+      </div>
+      {/* คณะกรรมการจัดทำแผน */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="mb-3 font-semibold text-slate-900">
+          คณะกรรมการจัดทำแผน
+        </h3>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              ผู้บริหารสถานศึกษา/ผู้แทน
+            </label>
+            <input
+              type="text"
+              defaultValue={plan.principalName ?? ""}
+              onBlur={(e) => {
+                if (e.target.value !== (plan.principalName ?? "")) {
+                  patch({ principalName: e.target.value });
+                }
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              ครูผู้รับผิดชอบ
+            </label>
+            <input
+              type="text"
+              defaultValue={plan.responsibleTeacherName ?? ""}
+              onBlur={(e) => {
+                if (e.target.value !== (plan.responsibleTeacherName ?? "")) {
+                  patch({ responsibleTeacherName: e.target.value });
+                }
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              ครูประจำชั้น
+            </label>
+            <input
+              type="text"
+              defaultValue={plan.homeroomTeacherName ?? ""}
+              onBlur={(e) => {
+                if (e.target.value !== (plan.homeroomTeacherName ?? "")) {
+                  patch({ homeroomTeacherName: e.target.value });
+                }
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              วันที่ประชุมจัดทำแผน
+            </label>
+            <input
+              type="date"
+              defaultValue={plan.meetingDate ?? ""}
+              onBlur={(e) => {
+                if (e.target.value !== (plan.meetingDate ?? "")) {
+                  patch({ meetingDate: e.target.value });
+                }
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -11,15 +11,15 @@
 
 /** ประเภทความพิการ 9 ประเภทตาม สพฐ. */
 export type DisabilityType =
-  | "visual"        // บกพร่องทางการเห็น
-  | "hearing"       // บกพร่องทางการได้ยิน
-  | "intellectual"  // บกพร่องทางสติปัญญา
-  | "physical"      // บกพร่องทางร่างกาย/การเคลื่อนไหว/สุขภาพ
-  | "learning"      // บกพร่องทางการเรียนรู้ (LD)
-  | "speech"        // บกพร่องทางการพูดและภาษา
-  | "behavioral"    // บกพร่องทางพฤติกรรมหรืออารมณ์
-  | "autism"        // ออทิสติก
-  | "multiple";     // พิการซ้อน
+  | "visual" // บกพร่องทางการเห็น
+  | "hearing" // บกพร่องทางการได้ยิน
+  | "intellectual" // บกพร่องทางสติปัญญา
+  | "physical" // บกพร่องทางร่างกาย/การเคลื่อนไหว/สุขภาพ
+  | "learning" // บกพร่องทางการเรียนรู้ (LD)
+  | "speech" // บกพร่องทางการพูดและภาษา
+  | "behavioral" // บกพร่องทางพฤติกรรมหรืออารมณ์
+  | "autism" // ออทิสติก
+  | "multiple"; // พิการซ้อน
 
 /** ด้านความสามารถที่ประเมิน — value ต้องตรงกับ key ใน data/mappingTable.json */
 export interface AbilityLevels {
@@ -119,6 +119,10 @@ export interface CreatePlanRequest {
   strengths?: string;
   academicYear: string;
   term: string;
+  principalName?: string;
+  responsibleTeacherName?: string;
+  homeroomTeacherName?: string;
+  meetingDate?: string; // ISO date string เช่น "2025-07-27"
 }
 
 export interface PlanGoalDTO {
@@ -161,6 +165,10 @@ export interface PlanDTO {
   goals: PlanGoalDTO[];
   media: PlanMediaDTO[];
   consistencyWarnings: string[];
+  principalName?: string;
+  responsibleTeacherName?: string;
+  homeroomTeacherName?: string;
+  meetingDate?: string; // ISO date string เช่น "2025-07-27"
 }
 
 // ═════════════════════════════════════════════
@@ -173,6 +181,10 @@ export interface UpdatePlanRequest {
   media?: { id: string; finalReason?: string; isApproved?: boolean }[];
   /** ตั้งเป็น "finalized" เมื่อครูกดยืนยัน → ระบบบันทึก finalizedAt ให้ */
   status?: PlanStatus;
+  principalName?: string;
+  responsibleTeacherName?: string;
+  homeroomTeacherName?: string;
+  meetingDate?: string; // ISO date string เช่น "2025-07-27"
 }
 
 // ═════════════════════════════════════════════
@@ -211,7 +223,11 @@ export type MappingTable = Record<string, Record<string, MediaEntry[]>>;
 
 export interface LLMOutput {
   iepGoals: { text: string; criterion: string; timeframe: string }[];
-  mediaRecommendations: { item: string; category: MediaCategory; reason: string }[];
+  mediaRecommendations: {
+    item: string;
+    category: MediaCategory;
+    reason: string;
+  }[];
 }
 
 export interface ErrorResponse {
