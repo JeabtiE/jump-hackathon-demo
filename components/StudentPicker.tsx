@@ -9,9 +9,18 @@
 "use client";
 
 import { useState } from "react";
-import type { CreateStudentRequest, DisabilityType, StudentSummary } from "@/lib/types";
+import type {
+  CreateStudentRequest,
+  DisabilityType,
+  StudentSummary,
+} from "@/lib/types";
+import BirthDatePicker from "./birthDatePicker";
 
-const DISABILITY_OPTIONS: { value: DisabilityType; label: string; ready: boolean }[] = [
+const DISABILITY_OPTIONS: {
+  value: DisabilityType;
+  label: string;
+  ready: boolean;
+}[] = [
   { value: "autism", label: "ออทิสติก", ready: true },
   { value: "learning", label: "บกพร่องทางการเรียนรู้ (LD)", ready: true },
   { value: "intellectual", label: "บกพร่องทางสติปัญญา", ready: true },
@@ -58,7 +67,10 @@ export default function StudentPicker({
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  function set<K extends keyof CreateStudentRequest>(key: K, v: CreateStudentRequest[K]) {
+  function set<K extends keyof CreateStudentRequest>(
+    key: K,
+    v: CreateStudentRequest[K],
+  ) {
     setForm((prev) => ({ ...prev, [key]: v }));
   }
 
@@ -83,7 +95,8 @@ export default function StudentPicker({
     }
   }
 
-  const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
+  const inputCls =
+    "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
   const labelCls = "mb-1 block text-xs text-slate-500";
 
   return (
@@ -107,7 +120,9 @@ export default function StudentPicker({
 
           {/* ── ข้อมูลจำเป็น ── */}
           <div>
-            <label className={labelCls}>รหัสนักเรียน (สำหรับอ้างอิงในระบบ) *</label>
+            <label className={labelCls}>
+              รหัสนักเรียน (สำหรับอ้างอิงในระบบ) *
+            </label>
             <input
               value={form.code}
               onChange={(e) => set("code", e.target.value)}
@@ -130,7 +145,9 @@ export default function StudentPicker({
             <label className={labelCls}>ประเภทความพิการ *</label>
             <select
               value={form.disabilityType}
-              onChange={(e) => set("disabilityType", e.target.value as DisabilityType)}
+              onChange={(e) =>
+                set("disabilityType", e.target.value as DisabilityType)
+              }
               className={inputCls}
             >
               {DISABILITY_OPTIONS.map((o) => (
@@ -152,12 +169,11 @@ export default function StudentPicker({
               />
             </div>
             <div>
-              <label className={labelCls}>วัน/เดือน/ปีเกิด</label>
-              <input
+              <BirthDatePicker
                 value={form.birthDate ?? ""}
-                onChange={(e) => set("birthDate", e.target.value)}
-                placeholder="5 ต.ค. 2561"
-                className={inputCls}
+                onChange={(v) => set("birthDate", v)}
+                labelCls={labelCls}
+                inputCls={inputCls}
               />
             </div>
           </div>
@@ -167,7 +183,9 @@ export default function StudentPicker({
             onClick={() => setShowMore((v) => !v)}
             className="text-xs text-slate-600 underline"
           >
-            {showMore ? "ซ่อนข้อมูลเพิ่มเติม" : "+ ข้อมูลเพิ่มเติมสำหรับเอกสาร (กรอกทีหลังได้)"}
+            {showMore
+              ? "ซ่อนข้อมูลเพิ่มเติม"
+              : "+ ข้อมูลเพิ่มเติมสำหรับเอกสาร (กรอกทีหลังได้)"}
           </button>
 
           {showMore && (
@@ -316,7 +334,9 @@ export default function StudentPicker({
       )}
 
       {students.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-400">ยังไม่มีข้อมูลนักเรียน</p>
+        <p className="py-4 text-center text-sm text-slate-400">
+          ยังไม่มีข้อมูลนักเรียน
+        </p>
       ) : (
         <ul className="space-y-1.5">
           {students.map((s) => (
@@ -329,9 +349,17 @@ export default function StudentPicker({
                     : "border-slate-200 hover:border-slate-300"
                 }`}
               >
-                <span className="font-medium text-slate-900">{s.fullName || s.code}</span>
-                {s.fullName && <span className="ml-2 text-xs text-slate-400">({s.code})</span>}
-                {s.gradeLevel && <span className="ml-2 text-slate-500">{s.gradeLevel}</span>}
+                <span className="font-medium text-slate-900">
+                  {s.fullName || s.code}
+                </span>
+                {s.fullName && (
+                  <span className="ml-2 text-xs text-slate-400">
+                    ({s.code})
+                  </span>
+                )}
+                {s.gradeLevel && (
+                  <span className="ml-2 text-slate-500">{s.gradeLevel}</span>
+                )}
                 <span className="mt-0.5 block text-xs text-slate-400">
                   แผนที่ทำแล้ว {s.planCount} ฉบับ
                 </span>
