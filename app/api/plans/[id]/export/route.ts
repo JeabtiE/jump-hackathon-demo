@@ -54,19 +54,40 @@ const THAI_MONTHS = [
 ];
 
 /**
- * "2026-07-27" → "ประชุมวันที่ 27 เดือน กรกฎาคม พ.ศ. 2569"
- * ไม่มีค่า/รูปแบบไม่ถูกต้อง → คืนบรรทัดเว้นว่างให้ครูกรอกมือเหมือนเดิม
+ * ตัวแปลงกลาง: "2018-10-05" → "5 ตุลาคม 2561" (พ.ศ.)
  * แยกสตริงตรงๆ ไม่ผ่าน new Date() เพราะ Date จะตีความเป็น UTC แล้ววันเพี้ยนใน +07:00
+ * parse ไม่ได้ → คืน null ให้ผู้เรียกตัดสินใจ fallback เอง
  */
-function thaiMeetingDateLine(iso?: string | null): string {
+function thaiDate(iso?: string | null): string | null {
   const m = iso?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return `ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`;
+  if (!m) return null;
 
   const [, y, mm, dd] = m;
   const monthName = THAI_MONTHS[Number(mm) - 1];
-  if (!monthName) return `ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`;
+  if (!monthName) return null;
 
-  return `ประชุมวันที่ ${Number(dd)} เดือน ${monthName} พ.ศ. ${Number(y) + 543}`;
+  return `${Number(dd)} ${monthName} ${Number(y) + 543}`;
+}
+
+/**
+ * วันเกิดในส่วนที่ 1: แปลงเป็นไทยถ้าเป็นรูปแบบ ISO จาก date picker
+ * parse ไม่ได้ → พิมพ์ค่าเดิมออกไป (นักเรียนเก่าเก็บเป็นข้อความอิสระ เช่น "5 ต.ค. 2561"
+ * ข้อมูลของครูต้องไม่หาย — ห้าม fallback เป็น BLANK)
+ */
+function birthDateText(iso?: string | null): string {
+  return thaiDate(iso) ?? val(iso);
+}
+
+/**
+ * "2026-07-27" → "ประชุมวันที่ 27 เดือน กรกฎาคม พ.ศ. 2569"
+ * ไม่มีค่า/รูปแบบไม่ถูกต้อง → คืนบรรทัดเว้นว่างให้ครูกรอกมือเหมือนเดิม
+ */
+function thaiMeetingDateLine(iso?: string | null): string {
+  const converted = thaiDate(iso);
+  if (!converted) return `ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`;
+
+  const [dd, monthName, yearBE] = converted.split(" ");
+  return `ประชุมวันที่ ${dd} เดือน ${monthName} พ.ศ. ${yearBE}`;
 }
 
 function heading(text: string) {
@@ -155,7 +176,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             body(`ชื่อ-ชื่อสกุล  ${val(s.fullName)}`),
             body(`เลขประจำตัวประชาชน  ${val(s.nationalId)}`),
             body(`ทะเบียนคนพิการเลขที่  ${val(s.disabilityCardNo)}`),
-            body(`วัน/เดือน/ปีเกิด  ${val(s.birthDate)}     ศาสนา  ${val(s.religion)}`),
+            body(`วัน/เดือน/ปีเกิด  ${birthDateText(s.birthDate)}     ศาสนา  ${val(s.religion)}`),
             body(
               `ประเภทความพิการ  ${DISABILITY_LABEL[s.disabilityType] ?? s.disabilityType}   ลักษณะ  ${val(s.disabilityDetail)}`
             ),
