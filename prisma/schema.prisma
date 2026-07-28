@@ -109,6 +109,16 @@ model Plan {
   /// draft = ยังแก้อยู่ | finalized = ครูยืนยันแล้ว
   status String @default("draft")
 
+  /// ── ส่วนที่ 7: คณะกรรมการจัดทำแผน ──
+  /// เก็บต่อแผน (ไม่ใช่ค่าคงที่ทั้งโรงเรียน) เพราะกรรมการเปลี่ยนตามนักเรียน/ชั้นเรียน
+  /// ชื่อ "บิดา มารดา หรือผู้ปกครอง" ไม่เก็บซ้ำที่นี่ — ดึงจาก Student.guardianName ตอน export
+  principalName          String?
+  responsibleTeacherName String?
+  homeroomTeacherName    String?
+  /// เก็บเป็น String "YYYY-MM-DD" ไม่ใช่ DateTime — เป็นวันที่ล้วนไม่มีเวลา
+  /// ถ้าใช้ DateTime จะเพี้ยนข้ามวันเวลาแปลง UTC ↔ +07:00
+  meetingDate            String?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   /// เวลาที่ครูกดยืนยัน → createdAt ถึง finalizedAt = เวลาที่ใช้ทำแผนจริง

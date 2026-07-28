@@ -48,6 +48,27 @@ function val(v?: string | null): string {
   return v?.trim() || BLANK;
 }
 
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+/**
+ * "2026-07-27" → "ประชุมวันที่ 27 เดือน กรกฎาคม พ.ศ. 2569"
+ * ไม่มีค่า/รูปแบบไม่ถูกต้อง → คืนบรรทัดเว้นว่างให้ครูกรอกมือเหมือนเดิม
+ * แยกสตริงตรงๆ ไม่ผ่าน new Date() เพราะ Date จะตีความเป็น UTC แล้ววันเพี้ยนใน +07:00
+ */
+function thaiMeetingDateLine(iso?: string | null): string {
+  const m = iso?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return `ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`;
+
+  const [, y, mm, dd] = m;
+  const monthName = THAI_MONTHS[Number(mm) - 1];
+  if (!monthName) return `ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`;
+
+  return `ประชุมวันที่ ${Number(dd)} เดือน ${monthName} พ.ศ. ${Number(y) + 543}`;
+}
+
 function heading(text: string) {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
@@ -231,10 +252,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             // ── ส่วนที่ 7: คณะกรรมการ ──
             heading("7. คณะกรรมการจัดทำแผนการจัดการศึกษาเฉพาะบุคคล"),
             ...[
-              { name: BLANK, role: "ผู้บริหารสถานศึกษา/ผู้แทน" },
+              { name: val(plan.principalName), role: "ผู้บริหารสถานศึกษา/ผู้แทน" },
               { name: val(s.guardianName), role: "บิดา มารดา หรือผู้ปกครอง" },
-              { name: BLANK, role: "ครูผู้รับผิดชอบ" },
-              { name: BLANK, role: "ครูประจำชั้น" },
+              { name: val(plan.responsibleTeacherName), role: "ครูผู้รับผิดชอบ" },
+              { name: val(plan.homeroomTeacherName), role: "ครูประจำชั้น" },
             ].flatMap((c) => [
               new Paragraph({
                 spacing: { before: 260 },
@@ -244,7 +265,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
                 children: [new TextRun({ text: `ลงชื่อ ${BLANK}`, size: 24, font: FONT })],
               }),
             ]),
-            body(`ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`),
+            body(thaiMeetingDateLine(plan.meetingDate)),
 
             // ── ส่วนที่ 8: ความเห็นผู้ปกครอง ──
             heading("8. ความเห็นของบิดา มารดา หรือผู้ปกครอง"),
