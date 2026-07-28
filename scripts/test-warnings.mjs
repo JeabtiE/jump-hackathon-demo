@@ -172,25 +172,25 @@ check(
 
 // ═════════ กฎ 4: เลือกเป้าหมายแล้วแต่ยังไม่อนุมัติสื่อเลย ═════════
 
-console.log("\n── กฎ 4: เลือกเป้าหมายแล้วแต่ยังไม่อนุมัติสื่อเลย ──");
+console.log("\n── กฎ 4: เลือกเป้าหมายแล้วแต่สื่อถูกเอาออกจากการเบิกหมด ──");
 
 check(
-  "goal เลือกแล้ว + media มีแต่ไม่ approve เลย → fire",
-  hasWarn(makePlan({ media: [makeMedia({ isApproved: false })] }), "ยังไม่ได้อนุมัติสื่อรายการใดเลย"),
+  "goal เลือกแล้ว + สื่อถูกเอาออกหมดทุกรายการ → fire เป็นคำถามยืนยัน",
+  hasWarn(makePlan({ media: [makeMedia({ isApproved: false })] }), "ไม่ต้องเบิกสื่อเลยใช่ไหม"),
   true
 );
 check(
-  "goal เลือกแล้ว + approve อย่างน้อย 1 รายการ → ไม่ fire",
+  "goal เลือกแล้ว + ยังเหลือสื่อเบิกอย่างน้อย 1 รายการ → ไม่ fire",
   hasWarn(
     makePlan({ media: [makeMedia(), makeMedia({ id: "m2", isApproved: false })] }),
-    "ยังไม่ได้อนุมัติสื่อรายการใดเลย"
+    "ไม่ต้องเบิกสื่อเลยใช่ไหม"
   ),
   false
 );
 check(
   "media ว่างเปล่า → ใช้ warning เดิม (ไม่มีรายการสื่อ) ไม่ใช่กฎนี้",
   hasWarn(makePlan({ media: [] }), "ยังไม่มีรายการสื่อที่แนะนำ") &&
-    !hasWarn(makePlan({ media: [] }), "ยังไม่ได้อนุมัติสื่อรายการใดเลย"),
+    !hasWarn(makePlan({ media: [] }), "ไม่ต้องเบิกสื่อเลยใช่ไหม"),
   true
 );
 check(
@@ -200,7 +200,7 @@ check(
       goals: [makeGoal({ isSelected: false })],
       media: [makeMedia({ isApproved: false })],
     }),
-    "ยังไม่ได้อนุมัติสื่อรายการใดเลย"
+    "ไม่ต้องเบิกสื่อเลยใช่ไหม"
   ),
   false
 );
