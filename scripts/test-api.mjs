@@ -227,21 +227,21 @@ console.log(`   ขนาดไฟล์: ${(buf.length / 1024).toFixed(1)} KB (
 
 step(`PATCH /api/plans/${plan.id} — ยัดข้อมูลผิดเพื่อทดสอบ consistency warnings`);
 
-// แผนใหม่: media ทุกตัว approve มาตั้งแต่สร้าง (schema default isApproved=true)
-// → กฎ "เลือกเป้าหมายแล้วแต่ยังไม่อนุมัติสื่อ" ต้องยังไม่ fire
+// แผนใหม่: media ทุกตัว approve มาตั้งแต่สร้าง (isApproved default true — ตั้งใจ ดู CLAUDE.md §6)
+// → กฎ "สื่อถูกเอาออกจากการเบิกหมด" ต้องยังไม่ fire
 const beforeWarn = (await (await call("GET", `/api/plans/${plan.id}`)).json()).consistencyWarnings;
-if (beforeWarn.some((w) => w.includes("ยังไม่ได้อนุมัติสื่อรายการใดเลย")))
-  fail("แผนใหม่ media approve หมดโดย default — warning 'ยังไม่ได้อนุมัติสื่อ' ไม่ควรโผล่", beforeWarn);
-console.log("✅ แผนใหม่ (media approve หมดโดย default): ไม่มี warning 'ยังไม่ได้อนุมัติสื่อ' ตามคาด");
+if (beforeWarn.some((w) => w.includes("ไม่ต้องเบิกสื่อเลยใช่ไหม")))
+  fail("แผนใหม่ media approve หมดโดย default — warning ยืนยันการไม่เบิกสื่อ ไม่ควรโผล่", beforeWarn);
+console.log("✅ แผนใหม่ (media approve หมดโดย default): ไม่มี warning ยืนยันการไม่เบิกสื่อ ตามคาด");
 
-// ครูกดเอาสื่อออกหมดทุกรายการ → กฎต้อง fire
+// ครูเอาสื่อออกจากการเบิกหมดทุกรายการ → กฎต้อง fire เป็นคำถามยืนยัน
 const unapproveRes = await call("PATCH", `/api/plans/${plan.id}`, {
   body: { media: fetched.media.map((m) => ({ id: m.id, isApproved: false })) },
 });
 const unapprovedWarn = (await unapproveRes.json()).consistencyWarnings;
-if (!unapprovedWarn.some((w) => w.includes("ยังไม่ได้อนุมัติสื่อรายการใดเลย")))
-  fail("เอา approve ออกหมดแล้ว แต่กฎ 'ยังไม่ได้อนุมัติสื่อ' ไม่ fire", unapprovedWarn);
-console.log("✅ เอา approve ออกหมดทุกรายการ → warning 'ยังไม่ได้อนุมัติสื่อ' โผล่ตามคาด");
+if (!unapprovedWarn.some((w) => w.includes("ไม่ต้องเบิกสื่อเลยใช่ไหม")))
+  fail("เอาสื่อออกจากการเบิกหมดแล้ว แต่กฎยืนยันการไม่เบิกสื่อ ไม่ fire", unapprovedWarn);
+console.log("✅ เอาสื่อออกหมดทุกรายการ → warning 'ไม่ต้องเบิกสื่อเลยใช่ไหม?' โผล่ตามคาด");
 
 // ยัดข้อมูลผิด 3 แบบในคำขอเดียว:
 //   - ปี 2555 (ผิด — แผนนี้ปี 2569) + ปี 2551 (ปีหลักสูตร ต้องไม่โดนเตือน)
@@ -266,8 +266,8 @@ if (!warns.some((w) => w.includes("ยังไม่มีเหตุผลแ
   fail("กฎ media อนุมัติแล้วแต่เหตุผลว่าง ไม่ fire", warns);
 if (!warns.some((w) => w.includes("คำนำหน้าชื่อเด็ก")))
   fail("กฎชื่อเด็กในข้อความเป้าหมาย ไม่ fire", warns);
-if (warns.some((w) => w.includes("ยังไม่ได้อนุมัติสื่อรายการใดเลย")))
-  fail("approve media ไปแล้ว 1 รายการ แต่ warning 'ยังไม่ได้อนุมัติสื่อ' ยังอยู่", warns);
+if (warns.some((w) => w.includes("ไม่ต้องเบิกสื่อเลยใช่ไหม")))
+  fail("approve media กลับไปแล้ว 1 รายการ แต่ warning ยืนยันการไม่เบิกสื่อ ยังอยู่", warns);
 if (!warns[0]?.includes("ไม่ตรงกับปีการศึกษา"))
   fail("warning ปีผิด (ร้ายแรงสุด) ควรอยู่บนสุด", warns);
 

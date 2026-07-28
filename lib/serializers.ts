@@ -144,9 +144,10 @@ function checkGoalSelected(goals: GoalRecord[]): string[] {
 }
 
 /**
- * กฎเดิม (ไม่มีสื่อเลย) + กฎใหม่ (เลือกเป้าหมายแล้วแต่ไม่มีสื่อ approve สักรายการ)
- * schema ตั้ง isApproved default = true ดังนั้นกฎใหม่จะ fire เฉพาะตอนครู
- * เอา approve ออกหมดทุกรายการเอง — flag ให้ทบทวนก่อนสรุปแผน ไม่ได้บอกว่าผิด
+ * กฎเดิม (ไม่มีสื่อเลย) + กฎใหม่ (เลือกเป้าหมายแล้วแต่สื่อถูกเอาออกจากการเบิกหมด)
+ * isApproved default = true โดยตั้งใจ (ดู CLAUDE.md §6) — สื่อมาจาก retrieval
+ * ที่ verified แล้วจึงเสนอแบบพร้อมเบิก กฎนี้จึง fire เฉพาะตอนครูเอาออกเอง
+ * ครบทุกรายการ = การกระทำที่ตั้งใจ → โทนคำถามยืนยัน ไม่ใช่โทน "ลืมทำ"
  */
 function checkMediaApproval(goals: GoalRecord[], media: MediaRecord[]): string[] {
   if (media.length === 0) {
@@ -154,7 +155,7 @@ function checkMediaApproval(goals: GoalRecord[], media: MediaRecord[]): string[]
   }
   if (goals.some((g) => g.isSelected) && !media.some((m) => m.isApproved)) {
     return [
-      "เลือกเป้าหมายที่จะใช้แล้ว แต่ยังไม่ได้อนุมัติสื่อรายการใดเลย — ตรวจรายการสื่อและอนุมัติรายการที่จะใช้จริงก่อนสรุปแผน",
+      "สื่อถูกเอาออกจากการเบิกครบทุกรายการ — แผนนี้ไม่ต้องเบิกสื่อเลยใช่ไหม? ถ้ายังต้องใช้ เลือกกลับก่อนสรุปแผน",
     ];
   }
   return [];
