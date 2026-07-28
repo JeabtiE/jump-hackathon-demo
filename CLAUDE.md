@@ -352,3 +352,6 @@ If a request falls outside this list, ask whether it helps meet the 31 July dead
 - Prefer the smallest change that works. This codebase has 8 days of life before its most important deadline.
 - When a request conflicts with a principle in this file (especially §4 AI architecture and §9 privacy), say so directly instead of silently complying.
 - If something in this file is out of date relative to the code, mention it.
+
+
+- Never add Co-Authored-By lines or "Generated with Claude Code" to commit messages.
