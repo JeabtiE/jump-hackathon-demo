@@ -12,6 +12,10 @@ type PlanWithRelations = {
   status: string;
   createdAt: Date;
   finalizedAt: Date | null;
+  principalName: string | null;
+  responsibleTeacherName: string | null;
+  homeroomTeacherName: string | null;
+  meetingDate: string | null;
   student: {
     code: string;
     fullName: string | null;
@@ -67,6 +71,11 @@ export function toPlanDTO(plan: PlanWithRelations): PlanDTO {
     createdAt: plan.createdAt.toISOString(),
     finalizedAt: plan.finalizedAt?.toISOString() ?? null,
     durationSeconds,
+    // DTO ประกาศเป็น optional (string | undefined) แต่ Prisma คืน null → แปลงให้ตรงกัน
+    principalName: plan.principalName ?? undefined,
+    responsibleTeacherName: plan.responsibleTeacherName ?? undefined,
+    homeroomTeacherName: plan.homeroomTeacherName ?? undefined,
+    meetingDate: plan.meetingDate ?? undefined,
     goals: plan.goals.map((g) => ({
       id: g.id,
       aiOriginal: g.aiOriginal,
