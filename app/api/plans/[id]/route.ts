@@ -62,16 +62,28 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         });
       }
 
+      // ── อัปเดตตัวแผนเอง: คณะกรรมการ (ส่วนที่ 7) + สถานะ ──
+      // ส่งเฉพาะ key ที่ client ส่งมาจริง (undefined = ไม่แตะ, "" = ล้างค่า)
+      const planData: Record<string, unknown> = {};
+
+      if (body.principalName !== undefined)
+        planData.principalName = body.principalName.trim() || null;
+      if (body.responsibleTeacherName !== undefined)
+        planData.responsibleTeacherName = body.responsibleTeacherName.trim() || null;
+      if (body.homeroomTeacherName !== undefined)
+        planData.homeroomTeacherName = body.homeroomTeacherName.trim() || null;
+      if (body.meetingDate !== undefined)
+        planData.meetingDate = body.meetingDate.trim() || null;
+
       // เปลี่ยนสถานะ — ถ้ายืนยันแผน บันทึกเวลาที่ใช้ทำ
       if (body.status) {
-        await tx.plan.update({
-          where: { id: params.id },
-          data: {
-            status: body.status,
-            finalizedAt:
-              body.status === "finalized" ? (existing.finalizedAt ?? new Date()) : null,
-          },
-        });
+        planData.status = body.status;
+        planData.finalizedAt =
+          body.status === "finalized" ? (existing.finalizedAt ?? new Date()) : null;
+      }
+
+      if (Object.keys(planData).length > 0) {
+        await tx.plan.update({ where: { id: params.id }, data: planData });
       }
     });
 
