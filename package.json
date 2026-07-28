@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
+    "test:api": "node scripts/test-api.mjs",
+    "test:pii": "node scripts/test-pii.mjs",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },

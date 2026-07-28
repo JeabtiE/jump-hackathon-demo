@@ -29,6 +29,9 @@ yarn-error.log*
 /data/real-cases/
 *-real.json
 
+# ไฟล์ .docx จาก test:api
+/scripts/output/
+
 # vercel
 .vercel
 
