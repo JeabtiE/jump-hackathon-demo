@@ -131,6 +131,8 @@ Five tables. The non-obvious decisions:
 
 **`Plan.createdAt` → `finalizedAt`** gives time-per-plan without manual stopwatch tracking.
 
+**`PlanMedia.isApproved` defaults to `true` — intentional, not a bug.** Media items come from the rule-based retrieval (verified against the government subsidy lists), so the system proposes them ready-to-claim; the teacher's job is to *remove* items, not to tick every item on every plan (16 students × every plan would violate the "if it doesn't make the teacher faster, cut it" rule). If the teacher removes every item, a consistency warning in `lib/serializers.ts` asks her to confirm — do not "fix" this default to `false`.
+
 The `/stats` page surfaces all of this. **Never "clean up" this apparent duplication.**
 
 ---
