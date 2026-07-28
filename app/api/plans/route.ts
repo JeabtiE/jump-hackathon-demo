@@ -160,6 +160,11 @@ export async function POST(request: Request) {
         assessmentId: assessment.id,
         academicYear: body.academicYear || String(new Date().getFullYear() + 543),
         term: body.term || "1",
+        // ── ส่วนที่ 7: คณะกรรมการจัดทำแผน (ไม่ส่งไป LLM — ใช้ตอน export เท่านั้น) ──
+        principalName: body.principalName?.trim() || null,
+        responsibleTeacherName: body.responsibleTeacherName?.trim() || null,
+        homeroomTeacherName: body.homeroomTeacherName?.trim() || null,
+        meetingDate: body.meetingDate?.trim() || null,
         goals: {
           create: llm.iepGoals.map((g, i) => ({
             aiOriginal: g.text,
