@@ -223,10 +223,61 @@ await writeFile(outFile, buf);
 console.log(`✅ เซฟแล้ว: ${outFile}`);
 console.log(`   ขนาดไฟล์: ${(buf.length / 1024).toFixed(1)} KB (${buf.length} bytes)`);
 
+// ═════════════ ขั้นที่ 7: consistency warnings ═════════════
+
+step(`PATCH /api/plans/${plan.id} — ยัดข้อมูลผิดเพื่อทดสอบ consistency warnings`);
+
+// แผนใหม่: media ทุกตัว approve มาตั้งแต่สร้าง (schema default isApproved=true)
+// → กฎ "เลือกเป้าหมายแล้วแต่ยังไม่อนุมัติสื่อ" ต้องยังไม่ fire
+const beforeWarn = (await (await call("GET", `/api/plans/${plan.id}`)).json()).consistencyWarnings;
+if (beforeWarn.some((w) => w.includes("ยังไม่ได้อนุมัติสื่อรายการใดเลย")))
+  fail("แผนใหม่ media approve หมดโดย default — warning 'ยังไม่ได้อนุมัติสื่อ' ไม่ควรโผล่", beforeWarn);
+console.log("✅ แผนใหม่ (media approve หมดโดย default): ไม่มี warning 'ยังไม่ได้อนุมัติสื่อ' ตามคาด");
+
+// ครูกดเอาสื่อออกหมดทุกรายการ → กฎต้อง fire
+const unapproveRes = await call("PATCH", `/api/plans/${plan.id}`, {
+  body: { media: fetched.media.map((m) => ({ id: m.id, isApproved: false })) },
+});
+const unapprovedWarn = (await unapproveRes.json()).consistencyWarnings;
+if (!unapprovedWarn.some((w) => w.includes("ยังไม่ได้อนุมัติสื่อรายการใดเลย")))
+  fail("เอา approve ออกหมดแล้ว แต่กฎ 'ยังไม่ได้อนุมัติสื่อ' ไม่ fire", unapprovedWarn);
+console.log("✅ เอา approve ออกหมดทุกรายการ → warning 'ยังไม่ได้อนุมัติสื่อ' โผล่ตามคาด");
+
+// ยัดข้อมูลผิด 3 แบบในคำขอเดียว:
+//   - ปี 2555 (ผิด — แผนนี้ปี 2569) + ปี 2551 (ปีหลักสูตร ต้องไม่โดนเตือน)
+//   - คำนำหน้าชื่อเด็ก "เด็กชายทดสอบ"
+//   - approve media แต่ล้าง finalReason เป็นค่าว่าง
+const badText =
+  "เด็กชายทดสอบ ระบบ ทำได้ 3 ใน 5 ครั้ง ภายในวันที่ 31 มีนาคม 2555 ตามหลักสูตรแกนกลาง พ.ศ. 2551";
+const badRes = await call("PATCH", `/api/plans/${plan.id}`, {
+  body: {
+    goals: [{ id: firstGoal.id, finalText: badText }],
+    media: [{ id: fetched.media[0].id, isApproved: true, finalReason: "" }],
+  },
+});
+const warns = (await badRes.json()).consistencyWarnings;
+warns.forEach((w, i) => console.log(`   ${i + 1}. ${w}`));
+
+if (!warns.some((w) => w.includes("พ.ศ. 2555")))
+  fail("กฎปี พ.ศ. ไม่ตรงปีการศึกษา ไม่ fire ทั้งที่ยัดปี 2555 เข้าไป", warns);
+if (warns.some((w) => w.includes("2551")))
+  fail("ปีหลักสูตร 2551 โดนเตือนทั้งที่อยู่ใน whitelist", warns);
+if (!warns.some((w) => w.includes("ยังไม่มีเหตุผลและความจำเป็น")))
+  fail("กฎ media อนุมัติแล้วแต่เหตุผลว่าง ไม่ fire", warns);
+if (!warns.some((w) => w.includes("คำนำหน้าชื่อเด็ก")))
+  fail("กฎชื่อเด็กในข้อความเป้าหมาย ไม่ fire", warns);
+if (warns.some((w) => w.includes("ยังไม่ได้อนุมัติสื่อรายการใดเลย")))
+  fail("approve media ไปแล้ว 1 รายการ แต่ warning 'ยังไม่ได้อนุมัติสื่อ' ยังอยู่", warns);
+if (!warns[0]?.includes("ไม่ตรงกับปีการศึกษา"))
+  fail("warning ปีผิด (ร้ายแรงสุด) ควรอยู่บนสุด", warns);
+
+console.log("✅ warnings fire ครบ + whitelist ปีหลักสูตรทำงาน + เรียงร้ายแรงสุดขึ้นก่อน");
+console.log("   (กฎเกณฑ์ไม่มีตัวเลข ทดสอบใน test-warnings.mjs — mock criterion มีเลขเสมอเลยยัดผ่าน API ไม่ได้)");
+
 // ═════════════ สรุป ═════════════
 
 console.log(`\n${"═".repeat(60)}`);
-console.log("🎉 ผ่านครบทั้ง 6 ขั้น — pipeline ทำงานได้ทั้งเส้นใน mock mode");
+console.log("🎉 ผ่านครบทั้ง 7 ขั้น — pipeline ทำงานได้ทั้งเส้นใน mock mode");
 console.log("═".repeat(60));
 console.log(`\n📌 studentId สำหรับลบข้อมูลทดสอบทีหลัง: ${student.id}`);
 console.log(`   ลบด้วย: curl -X DELETE ${BASE}/api/students/${student.id}`);
