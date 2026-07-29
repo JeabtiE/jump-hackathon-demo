@@ -28,6 +28,22 @@ const DISABILITY_OPTIONS: {
   { value: "behavioral", label: "บกพร่องทางพฤติกรรมหรืออารมณ์", ready: false },
 ];
 
+const GRADE_OPTION = [
+  { value: "ป1", label: "ป1" },
+  { value: "ป2", label: "ป2" },
+  { value: "ป3", label: "ป3" },
+  { value: "ป4", label: "ป4" },
+  { value: "ป5", label: "ป5" },
+  { value: "ป6", label: "ป6" },
+];
+
+const RELATIONSHIP = [
+  { value: "FATHER", label: "บิดา(พ่อ)" },
+  { value: "MOTHER", label: "มารดา(แม่)" },
+  { value: "GUADIAN", label: "ผู้ปกครองตามกฎหมาย" },
+  { value: "RELATIVE", label: "ญาติ / ญาติผู้ใหญ่" },
+];
+
 const EMPTY: CreateStudentRequest = {
   code: "",
   disabilityType: "autism",
@@ -161,12 +177,18 @@ export default function StudentPicker({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className={labelCls}>ระดับชั้น</label>
-              <input
+              <select
                 value={form.gradeLevel ?? ""}
                 onChange={(e) => set("gradeLevel", e.target.value)}
-                placeholder="ป.2"
                 className={inputCls}
-              />
+              >
+                <option value="">--เลือกระดับชั้น--</option>
+                {GRADE_OPTION.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <BirthDatePicker
@@ -245,12 +267,18 @@ export default function StudentPicker({
                 </div>
                 <div>
                   <label className={labelCls}>เกี่ยวข้องเป็น</label>
-                  <input
+                  <select
                     value={form.guardianRelation ?? ""}
                     onChange={(e) => set("guardianRelation", e.target.value)}
-                    placeholder="มารดา"
                     className={inputCls}
-                  />
+                  >
+                    <option value="">-กรุณาเลือก-</option>
+                    {RELATIONSHIP.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>
