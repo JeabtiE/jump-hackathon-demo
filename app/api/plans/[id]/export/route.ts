@@ -106,6 +106,28 @@ function body(text: string, opts: { indent?: boolean; italics?: boolean } = {}) 
   });
 }
 
+/** เส้นให้กรอกมือแบบสั้น — BLANK ปกติยาวเกินสำหรับช่องในตาราง */
+const CELL_BLANK = "..........";
+
+/**
+ * ช่อง "ผู้จัดหา / วิธีการ" ของส่วนที่ 6
+ * - วิธีการ: เติมจากคู่มือ 2568 (ขอรับ / ขอยืม / รับบริการ)
+ * - ผู้จัดหา: ระบบไม่เก็บ (ผู้ปกครอง / สถานศึกษา / สถานพยาบาล) → เว้นให้ครูกรอก
+ */
+function supplyCellText(mode?: string | null): string {
+  return `${CELL_BLANK} / ${mode?.trim() || CELL_BLANK}`;
+}
+
+/**
+ * ช่อง "จำนวนเงินที่ขออุดหนุน" — ราคาตามคู่มือ
+ * บัญชี ก เป็นการขอยืมครุภัณฑ์ ไม่มีราคาและไม่ขอเงินอุดหนุน → ระบุให้ชัดแทนเว้นว่าง
+ * เพื่อไม่ให้ดูเหมือนระบบลืมกรอก
+ */
+function amountCellText(m: { price: string | null; mode: string | null }): string {
+  if (m.price?.trim()) return m.price.trim();
+  return m.mode === "ขอยืม" ? "— (ขอยืม)" : CELL_BLANK;
+}
+
 function cell(text: string, opts: { bold?: boolean } = {}) {
   return new TableCell({
     children: [
@@ -253,18 +275,18 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
                             children: [
                               cell(String(i + 1)),
                               cell(`${m.item}  (บัญชี ${m.category})`),
-                              cell(BLANK),
-                              cell(BLANK),
-                              cell(BLANK),
+                              cell(m.code?.trim() || CELL_BLANK),
+                              cell(supplyCellText(m.mode)),
+                              cell(amountCellText(m)),
                               cell(personalizeForExport(m.finalReason, s.fullName)),
-                              cell(BLANK),
+                              cell(CELL_BLANK),
                             ],
                           })
                       ),
                     ],
                   }),
                   body(
-                    "หมายเหตุ: ช่อง รหัส / ผู้จัดหา (1.ผู้ปกครอง 2.สถานศึกษา 3.สถานพยาบาล) / วิธีการ (1.ขอรับเงินอุดหนุน 2.ขอยืม) / จำนวนเงิน — ระบบยังไม่เก็บข้อมูลนี้ กรุณากรอกด้วยมือตามระเบียบการเบิกจ่ายของศูนย์การศึกษาพิเศษ",
+                    "หมายเหตุ: ช่อง รหัส / วิธีการ / จำนวนเงิน เติมจากคู่มือรายการสิ่งอำนวยความสะดวก สื่อ บริการฯ พ.ศ. 2568 (สำนักบริหารงานการศึกษาพิเศษ สพฐ.) — กรุณาตรวจสอบกับประกาศฉบับล่าสุดก่อนยื่นเบิก ส่วนช่อง ผู้จัดหา (1.ผู้ปกครอง 2.สถานศึกษา 3.สถานพยาบาล) และ ผู้ประเมิน ระบบยังไม่เก็บข้อมูลนี้ กรุณากรอกด้วยมือ",
                     { italics: true }
                   ),
                 ]

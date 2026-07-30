@@ -37,8 +37,10 @@ export function retrieveMedia(
     if (!entries) continue;
 
     for (const entry of entries) {
-      if (seen.has(entry.item)) continue;
-      seen.add(entry.item);
+      // dedupe ด้วยรหัส ไม่ใช่ชื่อ — ชื่อในคู่มือซ้ำกันได้ระหว่างรหัสต่างกัน
+      // (เช่น "กระดานสื่อสาร" มีทั้งแบบแม่เหล็กและขนาดใหญ่) แต่รหัสไม่ซ้ำแน่นอน
+      if (seen.has(entry.code)) continue;
+      seen.add(entry.code);
       results.push(entry);
     }
   }

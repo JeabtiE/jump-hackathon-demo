@@ -31,7 +31,11 @@ export interface AbilityLevels {
   selfHelp?: string;
 }
 
-export type MediaCategory = "ก" | "ข";
+/** บัญชี ก = ขอยืม (ไม่มีราคา) | ข = ขอรับเงินอุดหนุน | ค = รับบริการ */
+export type MediaCategory = "ก" | "ข" | "ค";
+
+/** วิธีการได้มาตามคู่มือ 2568 — ตรงกับช่อง "วิธีการ" ในแบบฟอร์มส่วนที่ 6 */
+export type MediaMode = "ขอรับ" | "ขอยืม" | "รับบริการ";
 export type PlanStatus = "draft" | "finalized";
 
 // ═════════════════════════════════════════════
@@ -140,8 +144,14 @@ export interface PlanGoalDTO {
 
 export interface PlanMediaDTO {
   id: string;
+  /** รหัสตามคู่มือ — null ได้ในแผนเก่าที่สร้างก่อนมีคู่มือ 2568 */
+  code: string | null;
   item: string;
   category: MediaCategory;
+  /** ราคาตามคู่มือ (null = บัญชี ก / ไม่ระบุ) — ใช้กรอกช่องจำนวนเงินที่ขออุดหนุน */
+  price: string | null;
+  /** ขอรับ / ขอยืม / รับบริการ — ใช้กรอกช่อง "วิธีการ" */
+  mode: MediaMode | null;
   aiReason: string;
   finalReason: string;
   isApproved: boolean;
@@ -208,8 +218,14 @@ export interface UsageStats {
 // ═════════════════════════════════════════════
 
 export interface MediaEntry {
+  /** รหัสรายการตามคู่มือ พ.ศ. 2568 เช่น "BE1784" — ใช้กรอกช่อง "รหัส" ในแบบฟอร์ม */
+  code: string;
   item: string;
   category: MediaCategory;
+  /** ราคาตามคู่มือ เช่น "2,000 บาท" — null สำหรับบัญชี ก (ขอยืม ไม่มีราคา) */
+  price: string | null;
+  /** วิธีการได้มา — null ถ้าคู่มือไม่ได้ระบุไว้ในรายการนั้น */
+  mode: MediaMode | null;
   /** หลักการทางวิชาการสั้นๆ — ใช้เป็น context ให้ LLM */
   rationale: string;
 }
@@ -223,9 +239,15 @@ export type MappingTable = Record<string, Record<string, MediaEntry[]>>;
 
 export interface LLMOutput {
   iepGoals: { text: string; criterion: string; timeframe: string }[];
+  /**
+   * ⚠️ code/item/category ที่ LLM คืนมาใช้แค่ "จับคู่กลับ" ไปหารายการที่ retrieve มา
+   *    ไม่ใช่แหล่งความจริง — รหัส/บัญชี/ราคา/วิธีการ ยึดจาก mappingTable เท่านั้น
+   *    รายการที่จับคู่ไม่ได้จะถูกทิ้ง (ดู app/api/plans/route.ts)
+   */
   mediaRecommendations: {
+    code?: string;
     item: string;
-    category: MediaCategory;
+    category?: MediaCategory;
     reason: string;
   }[];
 }

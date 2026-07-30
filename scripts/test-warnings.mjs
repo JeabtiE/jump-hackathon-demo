@@ -47,8 +47,11 @@ function makeGoal(overrides = {}) {
 function makeMedia(overrides = {}) {
   return {
     id: "m1",
-    item: "บัตรภาพสัญลักษณ์ PECS",
+    code: "BN0104",
+    item: "บัตรภาพ",
     category: "ข",
+    price: "150 บาท/กล่อง",
+    mode: "ขอรับ",
     aiReason: "ช่วยการสื่อสารทางเลือก",
     finalReason: "ช่วยการสื่อสารทางเลือก",
     isApproved: true,
@@ -142,6 +145,31 @@ check(
     "ยังไม่มีเหตุผลและความจำเป็น"
   ),
   false
+);
+
+// ═════════ กฎ 2.5: สื่อไม่มีรหัสตามคู่มือ 2568 ═════════
+
+console.log("\n── กฎ 2.5: สื่อไม่มีรหัสตามคู่มือ ──");
+
+check(
+  "media approve แล้ว + code เป็น null (แผนเก่า) → fire",
+  hasWarn(makePlan({ media: [makeMedia({ code: null })] }), "ยังไม่มีรหัสตามคู่มือ"),
+  true
+);
+check(
+  "media ยังไม่ approve + ไม่มี code → ไม่ fire (ไม่เบิกก็ไม่ต้องมีรหัส)",
+  hasWarn(
+    makePlan({ media: [makeMedia({ code: null, isApproved: false }), makeMedia({ id: "m2" })] }),
+    "ยังไม่มีรหัสตามคู่มือ"
+  ),
+  false
+);
+check(
+  "ไม่มีรหัสหลายรายการ → รวมเป็น warning เดียว",
+  warningsOf(
+    makePlan({ media: [makeMedia({ code: null }), makeMedia({ id: "m2", code: "  " })] })
+  ).filter((w) => w.includes("ยังไม่มีรหัสตามคู่มือ")).length,
+  1
 );
 
 // ═════════ กฎ 3: ชื่อเด็กในข้อความเป้าหมาย ═════════
