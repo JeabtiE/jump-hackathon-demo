@@ -35,11 +35,43 @@ function buildMockOutput(media: MediaEntry[]): LLMOutput {
       },
     ],
     mediaRecommendations: media.map((m) => ({
+      code: m.code,
       item: m.item,
       category: m.category,
       reason: `[MOCK] ${m.rationale}`,
     })),
   };
+}
+
+/**
+ * จับคู่รายการที่ LLM คืนมา → รายการจริงที่ retrieve มา (CLAUDE.md §4)
+ *
+ * 🔑 รหัส/ชื่อ/บัญชี/ราคา/วิธีการ ยึดจาก mappingTable เท่านั้น — จาก LLM เอาแค่ "เหตุผล"
+ *    รายการที่จับคู่ไม่ได้ถูกทิ้ง เพื่อไม่ให้สื่อที่เบิกไม่ได้หลุดเข้าเอกสาร
+ */
+function resolveMediaRecommendations(
+  llmMedia: LLMOutput["mediaRecommendations"],
+  retrievedMedia: MediaEntry[]
+) {
+  const byCode = new Map(retrievedMedia.map((m) => [m.code, m]));
+  const byItem = new Map(retrievedMedia.map((m) => [m.item.trim(), m]));
+
+  const resolved: { entry: MediaEntry; reason: string }[] = [];
+  const used = new Set<string>();
+
+  for (const rec of llmMedia) {
+    // จับคู่ด้วยรหัสก่อน (แม่นกว่า) ค่อย fallback เป็นชื่อ เผื่อ LLM ตกช่อง code
+    const entry = (rec.code && byCode.get(rec.code.trim())) || byItem.get(rec.item?.trim() ?? "");
+    if (!entry) {
+      console.warn("ทิ้งรายการสื่อที่ไม่อยู่ใน retrieval:", rec.code ?? rec.item);
+      continue;
+    }
+    if (used.has(entry.code)) continue;
+    used.add(entry.code);
+    resolved.push({ entry, reason: rec.reason });
+  }
+
+  return resolved;
 }
 
 async function callLLM(params: {
@@ -176,12 +208,17 @@ export async function POST(request: Request) {
           })),
         },
         media: {
-          create: llm.mediaRecommendations.map((m) => ({
-            item: m.item,
-            category: m.category,
-            aiReason: m.reason,
-            finalReason: m.reason,
-          })),
+          create: resolveMediaRecommendations(llm.mediaRecommendations, retrievedMedia).map(
+            ({ entry, reason }) => ({
+              code: entry.code,
+              item: entry.item,
+              category: entry.category,
+              price: entry.price,
+              mode: entry.mode,
+              aiReason: reason,
+              finalReason: reason,
+            })
+          ),
         },
       },
       include: {
