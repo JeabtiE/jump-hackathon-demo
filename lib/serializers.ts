@@ -21,6 +21,9 @@ type MediaRecord = {
   id: string;
   item: string;
   category: string;
+  code: string | null;
+  price: string | null;
+  mode: string | null;
   aiReason: string;
   finalReason: string;
   isApproved: boolean;
@@ -114,6 +117,19 @@ function checkApprovedMediaReason(media: MediaRecord[]): string[] {
     );
 }
 
+/**
+ * กฎ 2.5: สื่อที่อนุมัติแล้วแต่ไม่มีรหัสตามคู่มือ
+ * เกิดกับแผนที่สร้างก่อนระบบอ้างอิงคู่มือ 2568 (PlanMedia.code เป็น null)
+ * รวมเป็น warning เดียวไม่แยกรายการ — ไม่งั้นแผนเก่าจะขึ้นเตือนท่วมหน้าจอ
+ */
+function checkMediaCode(media: MediaRecord[]): string[] {
+  const missing = media.filter((m) => m.isApproved && !m.code?.trim());
+  if (missing.length === 0) return [];
+  return [
+    `สื่อ ${missing.length} รายการยังไม่มีรหัสตามคู่มือ พ.ศ. 2568 (${missing[0].item}${missing.length > 1 ? " ฯลฯ" : ""}) — แผนนี้สร้างก่อนระบบอ้างอิงคู่มือ ต้องกรอกช่องรหัสด้วยมือในแบบฟอร์มเบิก`,
+  ];
+}
+
 /** กฎ 3: มีชื่อเด็กในข้อความเป้าหมาย — ระบบเติมชื่อจริงให้ตอน export อยู่แล้ว ควรใช้คำว่า "นักเรียน" */
 function checkChildNameInGoals(goals: GoalRecord[]): string[] {
   const warnings: string[] = [];
@@ -191,6 +207,7 @@ export function buildConsistencyWarnings(
   return [
     ...checkYearMismatch(plan.goals, plan.academicYear),
     ...checkApprovedMediaReason(plan.media),
+    ...checkMediaCode(plan.media),
     ...checkChildNameInGoals(plan.goals),
     ...checkGoalCompleteness(plan.goals),
     ...checkGoalSelected(plan.goals),
@@ -234,8 +251,11 @@ export function toPlanDTO(plan: PlanWithRelations): PlanDTO {
     })),
     media: plan.media.map((m) => ({
       id: m.id,
+      code: m.code,
       item: m.item,
-      category: m.category as "ก" | "ข",
+      category: m.category as PlanDTO["media"][number]["category"],
+      price: m.price,
+      mode: m.mode as PlanDTO["media"][number]["mode"],
       aiReason: m.aiReason,
       finalReason: m.finalReason,
       isApproved: m.isApproved,

@@ -183,10 +183,14 @@ export default function PlanEditor({
             label="คัดลอกทั้งหมด"
             text={plan.media
               .filter((m) => m.isApproved)
-              .map(
-                (m) =>
-                  `${m.item} (บัญชี ${m.category})\nเหตุผล: ${m.finalReason}`,
-              )
+              .map((m) => {
+                // บัญชี ก ไม่มีราคาเพราะเป็นการขอยืม — แสดง "ขอยืม" แทน
+                // (ให้ตรงกับช่องจำนวนเงินใน .docx: app/api/plans/[id]/export/route.ts)
+                const amount = m.price ?? (m.mode === "ขอยืม" ? "ขอยืม" : null);
+                // แผนเก่าที่สร้างก่อนอ้างอิงคู่มือ 2568 ไม่มีรหัส → ตัดวงเล็บเหลี่ยมออก
+                const prefix = m.code ? `[${m.code}] ` : "";
+                return `${prefix}${m.item} (บัญชี ${m.category}${amount ? `, ${amount}` : ""}) — เหตุผล: ${m.finalReason}`;
+              })
               .join("\n\n")}
           />
         </div>
