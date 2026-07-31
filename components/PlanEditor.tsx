@@ -223,10 +223,10 @@ export default function PlanEditor({
                   checked={m.isApproved}
                   disabled={isPending}
                   onChange={(e) => {
-                    const checked = e.target.checked;
+                    const nextIsApprove = e.target.checked;
                     startTransition(async () => {
                       await patch({
-                        media: [{ id: m.id, isApproved: e.target.checked }],
+                        media: [{ id: m.id, isApproved: nextIsApprove }],
                       });
                     });
                   }}
