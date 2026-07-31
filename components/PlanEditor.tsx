@@ -221,17 +221,29 @@ export default function PlanEditor({
                 <input
                   type="checkbox"
                   checked={m.isApproved}
-                  onChange={(e) =>
-                    patch({
-                      media: [{ id: m.id, isApproved: e.target.checked }],
-                    })
-                  }
+                  disabled={isPending}
+                  onChange={(e) => {
+                    const nextIsApprove = e.target.checked;
+                    startTransition(async () => {
+                      await patch({
+                        media: [{ id: m.id, isApproved: nextIsApprove }],
+                      });
+                    });
+                  }}
+                  className="cursor-pointer disabled:cursor-not-allowed"
                 />
                 <span className="font-medium text-slate-900">{m.item}</span>
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                   บัญชี {m.category}
                 </span>
-                {m.isEdited && (
+
+                {isPending && (
+                  <span className="text-xs text-teal-600 animate-pulse font-normal">
+                    กำลังบันทึก...
+                  </span>
+                )}
+
+                {m.isEdited && !isPending && (
                   <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
                     แก้ไขแล้ว
                   </span>
@@ -239,15 +251,19 @@ export default function PlanEditor({
               </div>
               <textarea
                 defaultValue={m.finalReason}
+                disabled={isPending}
                 onBlur={(e) => {
-                  if (e.target.value !== m.finalReason) {
-                    patch({
-                      media: [{ id: m.id, finalReason: e.target.value }],
+                  const nextReason = e.target.value;
+                  if (nextReason !== m.finalReason) {
+                    startTransition(async () => {
+                      await patch({
+                        media: [{ id: m.id, finalReason: nextReason }],
+                      });
                     });
                   }
                 }}
                 rows={2}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-all ${isPending ? "bg-slate-100 opacity-60 cursor-not-allowed" : ""}`}
               />
             </div>
           ))}
