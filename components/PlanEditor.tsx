@@ -14,6 +14,7 @@
 import { useState } from "react";
 import CopyButton from "./CopyButton";
 import type { PlanDTO } from "@/lib/types";
+import { useTransition } from "react";
 
 export default function PlanEditor({
   plan,
@@ -42,6 +43,7 @@ export default function PlanEditor({
     }
   }
 
+  const [isPending, startTransition] = useTransition();
   const selectedGoal = plan.goals.find((g) => g.isSelected);
   const isFinalized = plan.status === "finalized";
   const missingCommitteeFields =
@@ -124,24 +126,34 @@ export default function PlanEditor({
                 g.isSelected ? "border-teal-500 bg-teal-50" : "border-slate-200"
               }`}
             >
-              <label className="mb-2 flex cursor-pointer items-start gap-2 text-sm">
+              <label
+                className={`mb-2 flex items-start gap-2 text-sm ${isPending ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+              >
                 <input
                   type="radio"
                   name="goal"
                   checked={g.isSelected}
+                  disabled={isPending}
                   onChange={() =>
-                    patch({
-                      goals: plan.goals.map((x) => ({
-                        id: x.id,
-                        isSelected: x.id === g.id,
-                      })),
+                    startTransition(async () => {
+                      await patch({
+                        goals: plan.goals.map((x) => ({
+                          id: x.id,
+                          isSelected: x.id === g.id,
+                        })),
+                      });
                     })
                   }
                   className="mt-1"
                 />
                 <span className="text-xs font-medium text-slate-400">
                   ตัวเลือกที่ {i + 1}
-                  {g.isEdited && (
+                  {isPending && (
+                    <span className="ml-2 text-teal-600 animate-pulse font-normal">
+                      กำลังบันทึก...
+                    </span>
+                  )}
+                  {g.isEdited && !isPending && (
                     <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">
                       แก้ไขแล้ว
                     </span>
