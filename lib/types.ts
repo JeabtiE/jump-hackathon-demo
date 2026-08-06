@@ -31,6 +31,9 @@ export interface AbilityLevels {
   selfHelp?: string;
 }
 
+/** กลุ่มสาระที่ระบบมีข้อมูลตัวชี้วัด (data/curriculum.json) — ขอบเขต ป.1-6 */
+export type CurriculumSubject = "thai" | "math";
+
 /** บัญชี ก = ขอยืม (ไม่มีราคา) | ข = ขอรับเงินอุดหนุน | ค = รับบริการ */
 export type MediaCategory = "ก" | "ข" | "ค";
 
@@ -121,6 +124,13 @@ export interface CreatePlanRequest {
   studentId: string;
   abilityLevels: AbilityLevels;
   strengths?: string;
+  /** กลุ่มสาระที่ต้องการอ้างตัวชี้วัด — ไม่ระบุ = ระบบดูจาก abilityLevels ให้เอง */
+  subjects?: CurriculumSubject[];
+  /**
+   * ระดับหลักสูตรที่ใช้ปรับตัวชี้วัด เช่น "ป.1" — ไม่ระบุ = ใช้ Student.gradeLevel
+   * (เด็กพิเศษมักปรับเป้าหมายจากชั้นที่ต่ำกว่าชั้นที่ลงทะเบียนเรียน)
+   */
+  curriculumGrade?: string;
   academicYear: string;
   term: string;
   principalName?: string;
@@ -137,6 +147,10 @@ export interface PlanGoalDTO {
   finalText: string;
   criterion: string | null;
   timeframe: string | null;
+  /** รหัสตัวชี้วัดที่ AI เลือกครั้งแรก (read-only) — คัดจาก data/curriculum.json เท่านั้น */
+  aiIndicatorCodes: string[];
+  /** รหัสตัวชี้วัดปัจจุบัน (ครูแก้ได้) เช่น ["ท 1.1 ป.1/1"] — [] = ไม่ได้อ้างตัวชี้วัด */
+  finalIndicatorCodes: string[];
   isSelected: boolean;
   /** true ถ้าครูแก้ไขจากต้นฉบับ AI แล้ว */
   isEdited: boolean;
@@ -187,7 +201,13 @@ export interface PlanDTO {
 
 /** PATCH /api/plans/[id] */
 export interface UpdatePlanRequest {
-  goals?: { id: string; finalText?: string; isSelected?: boolean }[];
+  goals?: {
+    id: string;
+    finalText?: string;
+    isSelected?: boolean;
+    /** รหัสที่ไม่มีอยู่จริงในหลักสูตรจะถูกทิ้ง (ข้ามชั้นได้ — ครูตัดสินใจเอง) */
+    finalIndicatorCodes?: string[];
+  }[];
   media?: { id: string; finalReason?: string; isApproved?: boolean }[];
   /** ตั้งเป็น "finalized" เมื่อครูกดยืนยัน → ระบบบันทึก finalizedAt ให้ */
   status?: PlanStatus;
@@ -234,11 +254,36 @@ export interface MediaEntry {
 export type MappingTable = Record<string, Record<string, MediaEntry[]>>;
 
 // ═════════════════════════════════════════════
+// INTERNAL: curriculum.json
+// ═════════════════════════════════════════════
+
+/** ตัวชี้วัด 1 ตัวตามหลักสูตรแกนกลาง — คืนจาก lib/curriculum-retrieval.ts */
+export interface IndicatorEntry {
+  /** รหัสทางการ เช่น "ท 1.1 ป.1/1" — ใช้อ้างในเอกสารส่วนที่ 5 */
+  code: string;
+  text: string;
+  /** มาตรฐานที่ตัวชี้วัดนี้สังกัด เช่น "ท 1.1" */
+  standard: string;
+  subject: CurriculumSubject;
+  /** ชั้นของตัวชี้วัด เช่น "ป.1" — อาจต่ำกว่าชั้นที่นักเรียนเรียนอยู่ */
+  grade: string;
+}
+
+// ═════════════════════════════════════════════
 // INTERNAL: สิ่งที่ LLM ต้องคืนมา
 // ═════════════════════════════════════════════
 
 export interface LLMOutput {
-  iepGoals: { text: string; criterion: string; timeframe: string }[];
+  /**
+   * ⚠️ indicatorCodes ที่ LLM คืนมาใช้แค่ "จับคู่กลับ" ไปหาตัวชี้วัดที่ retrieve มา
+   *    รหัสที่ไม่อยู่ในรายการที่ส่งไปให้จะถูกทิ้ง (ดู resolveIndicatorCodes)
+   */
+  iepGoals: {
+    text: string;
+    criterion: string;
+    timeframe: string;
+    indicatorCodes?: string[];
+  }[];
   /**
    * ⚠️ code/item/category ที่ LLM คืนมาใช้แค่ "จับคู่กลับ" ไปหารายการที่ retrieve มา
    *    ไม่ใช่แหล่งความจริง — รหัส/บัญชี/ราคา/วิธีการ ยึดจาก mappingTable เท่านั้น

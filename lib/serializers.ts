@@ -14,6 +14,8 @@ type GoalRecord = {
   finalText: string;
   criterion: string | null;
   timeframe: string | null;
+  aiIndicatorCodes: string[];
+  finalIndicatorCodes: string[];
   isSelected: boolean;
 };
 
@@ -246,6 +248,9 @@ export function toPlanDTO(plan: PlanWithRelations): PlanDTO {
       finalText: g.finalText,
       criterion: g.criterion,
       timeframe: g.timeframe,
+      // ?? [] — แผนที่สร้างก่อนมีฟีเจอร์นี้ไม่มีค่า (Prisma คืน [] อยู่แล้ว แต่กันข้อมูลเก่าที่ dump มาจากที่อื่น)
+      aiIndicatorCodes: g.aiIndicatorCodes ?? [],
+      finalIndicatorCodes: g.finalIndicatorCodes ?? [],
       isSelected: g.isSelected,
       isEdited: g.aiOriginal.trim() !== g.finalText.trim(),
     })),

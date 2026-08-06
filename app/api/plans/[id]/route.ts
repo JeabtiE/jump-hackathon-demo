@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { isKnownIndicatorCode } from "@/lib/curriculum-retrieval";
 import { toPlanDTO } from "@/lib/serializers";
 import type { UpdatePlanRequest } from "@/lib/types";
 
@@ -17,6 +18,31 @@ const INCLUDE = {
   goals: { orderBy: { orderIndex: "asc" as const } },
   media: true,
 };
+
+/**
+ * กรองรหัสตัวชี้วัดที่ครูส่งมา เหลือเฉพาะรหัสที่มีอยู่จริงในหลักสูตร
+ *
+ * ⚠️ ตรวจแค่ว่า "มีรหัสนี้จริงไหม" ไม่ตรวจว่าตรงกับระดับชั้นของนักเรียนหรือไม่ —
+ *    ครูมีสิทธิ์อ้างตัวชี้วัดข้ามชั้นด้วยดุลยพินิจของตัวเอง ระบบไม่ตัดสินแทน (CLAUDE.md §4)
+ */
+function cleanIndicatorCodes(codes: string[]): string[] {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+
+  for (const raw of codes ?? []) {
+    if (typeof raw !== "string") continue;
+    const code = raw.trim();
+    if (!code || seen.has(code)) continue;
+    if (!isKnownIndicatorCode(code)) {
+      console.warn("ทิ้งรหัสตัวชี้วัดที่ไม่มีในหลักสูตร:", code);
+      continue;
+    }
+    seen.add(code);
+    kept.push(code);
+  }
+
+  return kept;
+}
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
@@ -40,13 +66,16 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!existing) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
 
     await prisma.$transaction(async (tx) => {
-      // อัปเดตเป้าหมาย — แก้เฉพาะ finalText ไม่แตะ aiOriginal
+      // อัปเดตเป้าหมาย — แก้เฉพาะ finalText / finalIndicatorCodes ไม่แตะ aiOriginal / aiIndicatorCodes
       for (const g of body.goals ?? []) {
         await tx.planGoal.update({
           where: { id: g.id },
           data: {
             ...(g.finalText !== undefined ? { finalText: g.finalText } : {}),
             ...(g.isSelected !== undefined ? { isSelected: g.isSelected } : {}),
+            ...(g.finalIndicatorCodes !== undefined
+              ? { finalIndicatorCodes: cleanIndicatorCodes(g.finalIndicatorCodes) }
+              : {}),
           },
         });
       }

@@ -145,6 +145,13 @@ model PlanGoal {
   criterion String?
   timeframe String?
 
+  /// ⚠️ รหัสตัวชี้วัดที่ AI เลือกครั้งแรก เช่น ["ท 1.1 ป.1/1"] — ห้ามแก้
+  /// คัดจาก data/curriculum.json ผ่าน retrieveIndicators() เท่านั้น AI คิดรหัสเองไม่ได้
+  /// [] = เป้าหมายด้านทักษะที่ไม่ได้อ้างกลุ่มสาระ (สื่อสาร/ช่วยเหลือตนเอง) — ไม่ใช่ข้อผิดพลาด
+  aiIndicatorCodes    String[] @default([])
+  /// รหัสหลังครูแก้ (ไม่แก้ = เท่ากับ aiIndicatorCodes) → รู้เองว่า AI จับคู่ตัวชี้วัดแม่นแค่ไหน
+  finalIndicatorCodes String[] @default([])
+
   /// ครูเลือกเป้าหมายข้อนี้ไปใช้จริงหรือไม่
   isSelected Boolean @default(false)
   orderIndex Int     @default(0)
