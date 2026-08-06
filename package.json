@@ -11,6 +11,7 @@
     "test:api": "node scripts/test-api.mjs",
     "test:pii": "node scripts/test-pii.mjs",
     "test:warnings": "node scripts/test-warnings.mjs",
+    "test:curriculum": "node --import ./scripts/register-alias.mjs scripts/test-curriculum.mjs",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },
