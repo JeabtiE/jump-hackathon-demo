@@ -65,6 +65,13 @@ const MEASURABLE_WORDS = /ร้อยละ|ทุกครั้ง|ด้ว�
 /** คำนำหน้าชื่อเด็ก + ชื่อที่ตามมา — pattern ชุดเดียวกับ scrubFreeText ใน pii-guard */
 const CHILD_NAME_PREFIX = /(?:เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)\s*[ก-ฮเแโใไ]\S*/;
 
+/**
+ * เพดานเงินอุดหนุนสื่อ ต่อนักเรียน 1 คน ต่อปี
+ * ยืนยันจาก 2 ทาง: แผนจริงทั้ง 2 ฉบับขอรวมพอดี 2,000 บาท
+ * และคู่มือระบบ IEP Online (หน้า 22) เตือนเมื่อยอดเกินจำนวนนี้
+ */
+const MEDIA_BUDGET_CAP_BAHT = 2000;
+
 const goalPreview = (g: GoalRecord) => g.finalText.slice(0, 30);
 
 function thaiDigitsToArabic(text: string): string {
@@ -95,6 +102,28 @@ export function findChildNamePrefix(text: string): string | null {
   return m ? m[0] : null;
 }
 
+/**
+ * ราคาจากคู่มือเป็น string มีหน่วยห้อยท้าย → ตัวเลขบาท
+ *   "250 บาท" → 250 | "1,250 บาท/ชุด" → 1250 | "110 บาท / เล่ม" → 110
+ *   null / รูปแบบที่อ่านไม่ออก → null (ไม่นับเข้ายอดรวม)
+ *
+ * ⚠️ anchor ที่ต้นสตริงเสมอ — หน่วยท้ายราคามีตัวเลขปนได้ ("23 บาท/12 แท่ง")
+ *    ถ้าจับตัวเลขลอย ๆ จะได้จำนวนแท่งมาแทนราคา
+ */
+export function parsePriceBaht(price: string | null): number | null {
+  if (!price) return null;
+  const m = thaiDigitsToArabic(price).match(/^\s*([\d,]+(?:\.\d+)?)/);
+  if (!m) return null;
+  const n = Number(m[1].replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 1250 → "1,250" — เขียนเองแทน toLocaleString เพื่อให้ผลเท่ากันทุก environment */
+function formatBaht(n: number): string {
+  const s = Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 /** กฎ 1 (ร้ายแรงสุด): ปี พ.ศ. ในเป้าหมายไม่ตรงกับปีการศึกษาของแผน — มักติดมาจากแผนปีก่อน */
 function checkYearMismatch(goals: GoalRecord[], academicYear: string): string[] {
   const warnings: string[] = [];
@@ -107,6 +136,36 @@ function checkYearMismatch(goals: GoalRecord[], academicYear: string): string[] 
     }
   }
   return warnings;
+}
+
+/**
+ * กฎ 1.5 (ร้ายแรงรองจากปีผิด): ยอดรวมสื่อที่อนุมัติ เกินเพดาน 2,000 บาท/คน/ปี
+ *
+ * อยู่สูงเพราะเป็น "กฎแข็ง" ของระบบต้นทาง ไม่ใช่ดุลยพินิจ — ยอดเกินแล้วระบบ
+ * IEP Online เตือนและเบิกไม่ผ่าน ครูต้องรู้ก่อนพิมพ์เอกสารให้คณะกรรมการเซ็น
+ *
+ * แต่ยังใช้โทนคำถามตาม CLAUDE.md §4 — ระบบไม่ตัดรายการให้เอง
+ * เพราะ "ตัดอันไหนออก" เป็นการตัดสินใจเชิงวิชาชีพของครู ไม่ใช่ของระบบ
+ *
+ * รายการที่ price = null ไม่นับเข้ายอด (บัญชี ก / ขอยืม = ไม่ได้ขอเงินอุดหนุน)
+ * แต่บอกจำนวนไว้ในข้อความ ครูจะได้รู้ว่ายอดนี้ยังไม่ครบทุกรายการ
+ */
+function checkMediaBudgetCap(media: MediaRecord[]): string[] {
+  const approved = media.filter((m) => m.isApproved);
+  const prices = approved
+    .map((m) => parsePriceBaht(m.price))
+    .filter((n): n is number => n !== null);
+
+  const total = prices.reduce((sum, n) => sum + n, 0);
+  if (total <= MEDIA_BUDGET_CAP_BAHT) return [];
+
+  const uncounted = approved.length - prices.length;
+  const note =
+    uncounted > 0 ? ` (ยังไม่รวมอีก ${uncounted} รายการที่ไม่มีราคา เช่น บัญชี ก / ขอยืม)` : "";
+
+  return [
+    `รวมราคาสื่อที่อนุมัติแล้ว ${formatBaht(total)} บาท เกินเพดาน ${formatBaht(MEDIA_BUDGET_CAP_BAHT)} บาท/คน/ปี ของระบบ IEP Online อยู่ ${formatBaht(total - MEDIA_BUDGET_CAP_BAHT)} บาท${note} — ตัดรายการออก หรือเปลี่ยนบางรายการเป็นขอยืมก่อนสรุปแผนไหม?`,
+  ];
 }
 
 /** กฎ 2: สื่อที่อนุมัติแล้วแต่ช่องเหตุผลว่าง — แบบฟอร์มขอรับเงินอุดหนุนต้องกรอกทุกรายการ */
@@ -208,6 +267,7 @@ export function buildConsistencyWarnings(
 ): string[] {
   return [
     ...checkYearMismatch(plan.goals, plan.academicYear),
+    ...checkMediaBudgetCap(plan.media),
     ...checkApprovedMediaReason(plan.media),
     ...checkMediaCode(plan.media),
     ...checkChildNameInGoals(plan.goals),
