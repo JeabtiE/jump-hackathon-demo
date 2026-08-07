@@ -2,12 +2,14 @@
  * scripts/fix_media_catalog.mjs — ซ่อม data/mediaCatalog2568.json ที่สกัดไว้แล้ว
  *
  * ทำไมต้องมีสคริปต์นี้ ทั้งที่แก้ scripts/parse_catalog.py ไปแล้ว:
- *   ไฟล์ต้นทาง pdfs/3.txt ไม่ได้อยู่ใน repo (ไม่เคย commit) จึงรัน parse_catalog.py
- *   ใหม่ไม่ได้ สคริปต์นี้ใช้ logic ชุดเดียวกับที่แก้ใน parse_catalog.py
- *   มาแก้ JSON ที่สกัดไว้แล้วแทน
+ *   ไฟล์ต้นทาง pdfs/3.txt ตั้งใจไม่ commit เข้า repo (อยู่ใน .gitignore) clone ใหม่
+ *   จึงรัน parse_catalog.py ไม่ได้ สคริปต์นี้ใช้ logic ชุดเดียวกับที่แก้ใน
+ *   parse_catalog.py มาแก้ JSON ที่ commit ไว้แล้วแทน
  *
- *   ⚠️ ถ้าหา pdfs/3.txt เจอเมื่อไหร่ ให้รัน parse_catalog.py ใหม่แทนสคริปต์นี้
- *      แล้วเทียบผลว่าตรงกัน — ถ้าตรง ลบสคริปต์นี้ทิ้งได้ เหลือ source เดียว
+ *   ✅ สคริปต์นี้อยู่ถาวร ห้ามลบ (CLAUDE.md §4)
+ *      หมายเหตุเดิมเคยบอกว่า "ถ้าหา pdfs/3.txt เจอ ให้ลบสคริปต์นี้ทิ้ง" — ยกเลิกแล้ว
+ *      (7 ส.ค. 2569) เพราะต้นฉบับยังไม่ commit อยู่ดี ลบไปแล้ว clone ใหม่จะ rebuild
+ *      catalog ไม่ได้เลย
  *
  * แก้ 2 เรื่อง:
  *   1. ราคาที่ค้างอยู่ในชื่อรายการ — regex เดิม anchor ราคาไว้ท้ายสุด แต่ฉบับ 2568
@@ -180,6 +182,9 @@ if (stillEmpty) {
     `\n⚠️ ที่ยังว่าง ${stillEmpty} รายการ: ${emptyNoText} รายการไม่มีข้อความ "ผู้มีสิทธิ" เลย`
   );
   console.log(
-    `   (parse_details() ใน parse_catalog.py จับ block ไม่ติด — แก้ได้ต่อเมื่อมี pdfs/3.txt)`
+    `   (parse_details() จับ block ไม่ติด — ไม่ใช่รหัสจากแผนจริง จึงยังไม่กระทบการใช้งาน`
+  );
+  console.log(
+    `    ถ้าจะไล่ปิดเพิ่ม ต้องมี pdfs/3.txt แล้วแก้ที่ parse_catalog.py เท่านั้น)`
   );
 }
