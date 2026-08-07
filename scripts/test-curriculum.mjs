@@ -61,12 +61,13 @@ check(
   []
 );
 check("ค่าว่างไม่นับ", subjectsFromAbilityLevels({ reading: "" }), []);
+check("math → math", subjectsFromAbilityLevels({ math: "cannot_calculate_carry" }), ["math"]);
 check(
-  "math ยังปิดอยู่ (ข้อความ curriculum.json เสีย) → ไม่คืน math",
-  subjectsFromAbilityLevels({ math: "cannot_calculate_carry" }),
-  []
+  "reading + math → เรียงตามลำดับคงที่เสมอ",
+  subjectsFromAbilityLevels({ math: "x", reading: "y" }),
+  ["thai", "math"]
 );
-check("getAvailableSubjects = เฉพาะวิชาที่เปิดจริง", getAvailableSubjects(), ["thai"]);
+check("getAvailableSubjects = เฉพาะวิชาที่เปิดจริง", getAvailableSubjects(), ["thai", "math"]);
 
 console.log("\n── retrieveIndicators ──");
 const p1 = retrieveIndicators({ subjects: ["thai"], gradeLevel: "ป.1" });
@@ -106,9 +107,18 @@ check(
   0
 );
 check(
-  "math ปิดอยู่ → ขอมาก็ไม่ให้",
+  "math ป.1 → 10 ตัวชี้วัด",
   retrieveIndicators({ subjects: ["math"], gradeLevel: "ป.1" }).length,
-  0
+  10
+);
+check(
+  "ขอ 2 วิชาพร้อมกัน → เรียงไทยก่อนคณิตเสมอ",
+  [
+    ...new Set(
+      retrieveIndicators({ subjects: ["math", "thai"], gradeLevel: "ป.1" }).map((i) => i.subject)
+    ),
+  ],
+  ["thai", "math"]
 );
 check(
   "กรองด้วย standards",
@@ -163,7 +173,7 @@ check("ค่าที่ไม่ใช่ string → ไม่ throw", resolve
 console.log("\n── isKnownIndicatorCode / lookupIndicators ──");
 check("รหัสข้ามชั้นครูเลือกเองได้", isKnownIndicatorCode("ท 2.1 ป.6/1"), true);
 check("รหัสมั่ว → false", isKnownIndicatorCode("ท 9.9 ป.1/1"), false);
-check("รหัสคณิต (ยังปิดอยู่) → false", isKnownIndicatorCode("ค 1.1 ป.1/1"), false);
+check("รหัสคณิต → true", isKnownIndicatorCode("ค 1.1 ป.1/1"), true);
 check(
   "lookupIndicators คืนข้อความเต็ม",
   lookupIndicators(["ท 1.1 ป.1/1"])[0].text,
@@ -176,7 +186,7 @@ check(
   1
 );
 
-console.log("\n── ข้อมูลต้นทาง: ข้อความภาษาไทยต้องไม่เพี้ยน ──");
+console.log("\n── ข้อมูลต้นทาง: ข้อความต้องไม่เพี้ยน ──");
 const allThai = retrieveIndicators({
   subjects: ["thai"],
   gradeLevel: "ป.6",
@@ -186,6 +196,37 @@ check("ข้อความไม่ว่าง", allThai.every((i) => i.text.
 check(
   "รูปแบบรหัสถูกต้องทุกตัว",
   allThai.every((i) => /^ท \d\.\d ป\.[1-6]\/\d+$/.test(i.code)),
+  true
+);
+
+/**
+ * regression ของบั๊ก font ใน math.pdf (สระ "า" กลายเป็น "ำ" ทั้งไฟล์)
+ * ถ้ามีคนรัน fix_math_curriculum_text.mjs ซ้ำผิดวิธีหรือ import ไฟล์ดิบทับ เทสต์ชุดนี้จะจับได้
+ */
+const allMath = [1, 2, 3, 4, 5, 6].flatMap((n) =>
+  retrieveIndicators({ subjects: ["math"], gradeLevel: `ป.${n}`, includeLowerGrades: false })
+);
+check("คณิตครบ 116 ตัวชี้วัด", allMath.length, 116);
+check(
+  'ต้องมีสระ "า" แล้ว (ก่อนซ่อมมี 0 รายการ)',
+  allMath.filter((i) => i.text.includes("า")).length >= 100,
+  true
+);
+// รูปที่ "ผิด" ของคำที่พบบ่อยสุด — ทุกตัวไม่ใช่คำไทยที่มีจริง เจอเมื่อไหร่แปลว่าซ่อมไม่ครบ
+const CORRUPTED_FORMS = ["กำร", "ควำม", "ค่ำ", "ต่ำง", "อ่ำน", "ตำม", "ทรำบ", "อำรบิก"];
+check(
+  "ไม่มีคำที่ font ทำเพี้ยนหลงเหลือ",
+  CORRUPTED_FORMS.filter((w) => allMath.some((i) => i.text.includes(w))),
+  []
+);
+check(
+  "ตัวอย่างที่เสียหนักสุดอ่านได้แล้ว (ค 1.1 ป.1/4)",
+  allMath.find((i) => i.code === "ค 1.1 ป.1/4").text,
+  "หาค่าของตัวไม่ทราบค่าในประโยค สัญลักษณ์แสดงการบวกและ ประโยคสัญลักษณ์แสดงการลบ ของจำนวนนับไม่เกิน 100 และ 0"
+);
+check(
+  "รูปแบบรหัสคณิตถูกต้องทุกตัว",
+  allMath.every((i) => /^ค \d\.\d ป\.[1-6]\/\d+$/.test(i.code)),
   true
 );
 
