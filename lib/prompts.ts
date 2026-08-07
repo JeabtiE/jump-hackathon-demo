@@ -6,7 +6,8 @@
  */
 
 import fewShot from "@/data/fewShotExamples.json";
-import type { AbilityLevels, MediaEntry } from "./types";
+import { SUBJECT_LABEL } from "./curriculum-retrieval";
+import type { AbilityLevels, IndicatorEntry, MediaEntry } from "./types";
 
 const DISABILITY_LABEL: Record<string, string> = {
   visual: "บกพร่องทางการเห็น",
@@ -43,6 +44,10 @@ ${objectives}
 - **จุดเด่น** — สิ่งที่นักเรียนทำได้แล้ว (ใช้เป็นฐานต่อยอด)
 - **จุดที่ควรพัฒนา** — ข้อจำกัดที่เป็นเป้าหมายของแผนนี้
 
+เป้าหมายด้านวิชาการในแผนจริง**ปรับมาจากตัวชี้วัดตามหลักสูตรแกนกลาง** แล้วอ้างรหัสกำกับไว้
+(เช่น "ท 1.1 ป.1/1") โดยลดระดับความยากให้ตรงกับความสามารถปัจจุบันของนักเรียน —
+ตัวชี้วัดที่ระบบส่งให้อาจเป็นของชั้นที่ต่ำกว่าชั้นที่นักเรียนเรียนอยู่ ซึ่งถูกต้องแล้ว
+
 จากนั้นเขียนเป็นลำดับ: **เป้าหมายระยะยาว 1 ปี** (ภาพรวมที่อยากให้นักเรียนทำได้ภายในสิ้นปีการศึกษา) → **จุดประสงค์เชิงพฤติกรรม/เป้าหมายระยะสั้น** (ข้อย่อยที่นำไปสู่เป้าหมายระยะยาว แต่ละข้อต้องวัดผลได้)
 
 ## กฎการเขียนเป้าหมาย (Behavioral Objective)
@@ -57,6 +62,9 @@ ${objectives}
 ## ข้อจำกัดที่ห้ามละเมิด
 - ห้ามแนะนำสื่อหรืออุปกรณ์ที่ไม่อยู่ในรายการที่ระบบส่งให้ (ระบบได้ตรวจสอบแล้วว่าเบิกได้จริง)
 - ต้องคืนรหัสสื่อตรงตามที่ระบบส่งให้ในวงเล็บเหลี่ยม ห้ามคิดรหัสใหม่ — รายการที่รหัสไม่ตรงจะถูกระบบทิ้ง
+- ห้ามคิดรหัสตัวชี้วัดขึ้นเอง ต้องคัดลอกจากรายการตัวชี้วัดที่ระบบส่งให้เท่านั้น — รหัสที่ไม่ตรงจะถูกระบบทิ้ง
+- ถ้าไม่มีตัวชี้วัดใดสอดคล้องกับเป้าหมายนั้นจริงๆ ให้คืน "indicatorCodes": [] ห้ามฝืนจับคู่
+  (เป้าหมายด้านทักษะ เช่น การช่วยเหลือตนเองหรือพฤติกรรม ปกติไม่อ้างตัวชี้วัดกลุ่มสาระ)
 - ห้ามระบุราคาหรือจำนวนเงินในข้อความ — ระบบเติมให้เองจากคู่มือทางการ
 - ห้ามวินิจฉัยหรือคาดเดาอาการเพิ่มเติมจากข้อมูลที่ให้มา
 - ห้ามระบุชื่อเด็กหรือข้อมูลส่วนบุคคลใดๆ ในคำตอบ — ใช้คำว่า "นักเรียน" แทนชื่อเสมอ
@@ -68,8 +76,8 @@ ${goalExamples}
 ตอบเป็น JSON เท่านั้น ไม่ต้องมีข้อความอื่นนอก JSON:
 {
   "iepGoals": [
-    { "id": "goal_1", "text": "...", "criterion": "...", "timeframe": "..." },
-    { "id": "goal_2", "text": "...", "criterion": "...", "timeframe": "..." }
+    { "id": "goal_1", "text": "...", "criterion": "...", "timeframe": "...", "indicatorCodes": ["รหัสตัวชี้วัดที่ระบบส่งให้ เช่น ท 1.1 ป.1/1"] },
+    { "id": "goal_2", "text": "...", "criterion": "...", "timeframe": "...", "indicatorCodes": [] }
   ],
   "mediaRecommendations": [
     { "code": "รหัสในวงเล็บเหลี่ยมที่ระบบส่งให้ เช่น BE1784", "item": "ชื่อสื่อตรงตามที่ระบบส่งให้", "reason": "เหตุผลที่เชื่อมโยงกับเป้าหมาย IEP ข้างต้น" }
@@ -85,8 +93,16 @@ export function buildUserPrompt(params: {
   strengths?: string;
   gradeLevel?: string;
   retrievedMedia: MediaEntry[];
+  retrievedIndicators?: IndicatorEntry[];
 }): string {
-  const { disabilityType, abilityLevels, strengths, gradeLevel, retrievedMedia } = params;
+  const {
+    disabilityType,
+    abilityLevels,
+    strengths,
+    gradeLevel,
+    retrievedMedia,
+    retrievedIndicators = [],
+  } = params;
 
   const abilityText = Object.entries(abilityLevels)
     .filter(([, v]) => v)
@@ -103,6 +119,19 @@ export function buildUserPrompt(params: {
     )
     .join("\n");
 
+  // ตัวชี้วัดแยกตามกลุ่มสาระ + กำกับชั้นไว้ทุกตัว เพราะรายการอาจข้ามชั้น
+  // (เด็กพิเศษปรับเป้าหมายจากชั้นที่ต่ำกว่าที่ลงทะเบียนเรียนได้ ดู GRADE_SPAN)
+  // บล็อกนี้ไม่พิมพ์เลยถ้าไม่มีตัวชี้วัด — ไม่พิมพ์ว่า "ไม่พบ" เพราะจะชวนให้ LLM เดารหัสมาเติม
+  const indicatorText = retrievedIndicators
+    .map((ind) => `- [${ind.code}] (${SUBJECT_LABEL[ind.subject]} ${ind.grade}) ${ind.text}`)
+    .join("\n");
+
+  const indicatorSection = indicatorText
+    ? `## ตัวชี้วัดตามหลักสูตรที่ใช้อ้างอิงได้ (ระบบคัดมาแล้ว — ห้ามอ้างรหัสนอกเหนือจากนี้)
+${indicatorText}
+`
+    : "";
+
   return `## ข้อมูลนักเรียน
 ประเภทความพิการ: ${DISABILITY_LABEL[disabilityType] ?? disabilityType}
 ${gradeLevel ? `ระดับชั้น: ${gradeLevel}` : ""}
@@ -112,7 +141,7 @@ ${abilityText || "- ไม่ได้ระบุ"}
 
 ${strengths ? `จุดเด่น/สิ่งที่ทำได้: ${strengths}` : ""}
 
-## รายการสื่อที่เบิกได้ (ระบบตรวจสอบแล้ว — ห้ามเสนอนอกเหนือจากนี้)
+${indicatorSection}## รายการสื่อที่เบิกได้ (ระบบตรวจสอบแล้ว — ห้ามเสนอนอกเหนือจากนี้)
 ${mediaText || "- ไม่พบรายการสื่อที่ตรงกับข้อมูลนี้"}
 
 จงสร้างเป้าหมาย IEP และเหตุผลประกอบการเบิกสื่อ ตามรูปแบบ JSON ที่กำหนด`;

@@ -26,6 +26,7 @@ import {
   WidthType,
 } from "docx";
 import { prisma } from "@/lib/db";
+import { lookupIndicators } from "@/lib/curriculum-retrieval";
 import { personalizeForExport } from "@/lib/pii-guard";
 
 const DISABILITY_LABEL: Record<string, string> = {
@@ -126,6 +127,34 @@ function supplyCellText(mode?: string | null): string {
 function amountCellText(m: { price: string | null; mode: string | null }): string {
   if (m.price?.trim()) return m.price.trim();
   return m.mode === "ขอยืม" ? "— (ขอยืม)" : CELL_BLANK;
+}
+
+/**
+ * บรรทัด "ปรับจากตัวชี้วัด" ใต้เป้าหมาย — คืน [] ถ้าไม่มีรหัส
+ * เป้าหมายด้านทักษะ (สื่อสาร/ช่วยเหลือตนเอง) ไม่อ้างตัวชี้วัดโดยปกติ
+ * และแผนที่สร้างก่อนมีฟีเจอร์นี้ก็ไม่มี → ต้องไม่มีบรรทัดว่างโผล่ในเอกสาร
+ */
+function indicatorLine(codes: string[]) {
+  if (!codes.length) return [];
+  return [body(`     ปรับจากตัวชี้วัด: ${codes.join(", ")}`, { indent: true })];
+}
+
+/**
+ * บล็อกกางข้อความตัวชี้วัดท้ายส่วนที่ 5
+ * ครูการศึกษาพิเศษรู้รหัสอยู่แล้ว แต่พี่เลี้ยงเด็กพิการ (วุฒิ ม.6) ไม่รู้ว่า
+ * "ท 1.1 ป.1/1" คืออะไร — CLAUDE.md §3 ให้ออกแบบเพื่อพี่เลี้ยง ไม่ใช่เพื่อผู้เชี่ยวชาญ
+ */
+function indicatorReferenceBlock(codes: string[]) {
+  const entries = lookupIndicators(codes);
+  if (entries.length === 0) return [];
+
+  return [
+    new Paragraph({ spacing: { before: 200 } }),
+    body("ตัวชี้วัดที่อ้างถึงในแผนนี้ (หลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พ.ศ. 2551)", {
+      italics: true,
+    }),
+    ...entries.map((e) => body(`${e.code}  ${e.text}`, { indent: true })),
+  ];
 }
 
 function cell(text: string, opts: { bold?: boolean } = {}) {
@@ -246,8 +275,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
                     `     เกณฑ์การประเมิน: ${g.criterion ?? "-"}   ระยะเวลา: ${g.timeframe ?? "-"}`,
                     { indent: true }
                   ),
+                  ...indicatorLine(g.finalIndicatorCodes),
                 ])
               : [body("(ยังไม่ได้เลือกเป้าหมาย)", { indent: true })]),
+
+            // กางข้อความตัวชี้วัดของเป้าหมายที่เลือกไว้ทั้งหมด (ไม่ซ้ำ)
+            ...indicatorReferenceBlock(selectedGoals.flatMap((g) => g.finalIndicatorCodes)),
 
             // ── ส่วนที่ 6: สิ่งอำนวยความสะดวก ──
             heading(

@@ -9,7 +9,9 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { isKnownIndicatorCode } from "@/lib/curriculum-retrieval";
 import { toPlanDTO } from "@/lib/serializers";
+import { fetchAnnualMediaContext } from "@/lib/plan-queries";
 import type { UpdatePlanRequest } from "@/lib/types";
 
 const INCLUDE = {
@@ -18,6 +20,31 @@ const INCLUDE = {
   media: true,
 };
 
+/**
+ * กรองรหัสตัวชี้วัดที่ครูส่งมา เหลือเฉพาะรหัสที่มีอยู่จริงในหลักสูตร
+ *
+ * ⚠️ ตรวจแค่ว่า "มีรหัสนี้จริงไหม" ไม่ตรวจว่าตรงกับระดับชั้นของนักเรียนหรือไม่ —
+ *    ครูมีสิทธิ์อ้างตัวชี้วัดข้ามชั้นด้วยดุลยพินิจของตัวเอง ระบบไม่ตัดสินแทน (CLAUDE.md §4)
+ */
+function cleanIndicatorCodes(codes: string[]): string[] {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+
+  for (const raw of codes ?? []) {
+    if (typeof raw !== "string") continue;
+    const code = raw.trim();
+    if (!code || seen.has(code)) continue;
+    if (!isKnownIndicatorCode(code)) {
+      console.warn("ทิ้งรหัสตัวชี้วัดที่ไม่มีในหลักสูตร:", code);
+      continue;
+    }
+    seen.add(code);
+    kept.push(code);
+  }
+
+  return kept;
+}
+
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
     const plan = await prisma.plan.findUnique({
@@ -25,7 +52,15 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       include: INCLUDE,
     });
     if (!plan) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
-    return NextResponse.json(toPlanDTO(plan));
+
+    // เพดานเงินอุดหนุนนับรวมทั้งปีการศึกษา — ต้องรู้ยอดของแผนอื่นด้วย (1 query)
+    const annual = await fetchAnnualMediaContext({
+      studentId: plan.studentId,
+      academicYear: plan.academicYear,
+      excludePlanId: plan.id,
+    });
+
+    return NextResponse.json(toPlanDTO(plan, annual));
   } catch (err) {
     console.error("GET /api/plans/[id] failed:", err);
     return NextResponse.json({ error: "ดึงข้อมูลแผนไม่สำเร็จ" }, { status: 500 });
@@ -40,13 +75,16 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!existing) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
 
     await prisma.$transaction(async (tx) => {
-      // อัปเดตเป้าหมาย — แก้เฉพาะ finalText ไม่แตะ aiOriginal
+      // อัปเดตเป้าหมาย — แก้เฉพาะ finalText / finalIndicatorCodes ไม่แตะ aiOriginal / aiIndicatorCodes
       for (const g of body.goals ?? []) {
         await tx.planGoal.update({
           where: { id: g.id },
           data: {
             ...(g.finalText !== undefined ? { finalText: g.finalText } : {}),
             ...(g.isSelected !== undefined ? { isSelected: g.isSelected } : {}),
+            ...(g.finalIndicatorCodes !== undefined
+              ? { finalIndicatorCodes: cleanIndicatorCodes(g.finalIndicatorCodes) }
+              : {}),
           },
         });
       }
@@ -92,7 +130,14 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       include: INCLUDE,
     });
 
-    return NextResponse.json(toPlanDTO(updated!));
+    // PATCH เปลี่ยน isApproved ได้ → ยอดรวมทั้งปีเปลี่ยนตาม ต้องคิดใหม่ทุกครั้ง
+    const annual = await fetchAnnualMediaContext({
+      studentId: updated!.studentId,
+      academicYear: updated!.academicYear,
+      excludePlanId: updated!.id,
+    });
+
+    return NextResponse.json(toPlanDTO(updated!, annual));
   } catch (err) {
     console.error("PATCH /api/plans/[id] failed:", err);
     return NextResponse.json({ error: "บันทึกการแก้ไขไม่สำเร็จ" }, { status: 500 });
