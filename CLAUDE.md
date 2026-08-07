@@ -108,7 +108,17 @@ data/mappingTable.json      (what retrieval actually serves)
    ↓ scripts/validate_media_catalog.mjs ← npm run validate:media
 ```
 
-`fix_media_catalog.mjs` exists only because `pdfs/3.txt` was never committed, so `parse_catalog.py` cannot be re-run. Both carry the same price/disability-type logic — **change one, change the other.** If the source txt ever resurfaces, re-run `parse_catalog.py`, confirm the output matches, and delete the .mjs so there is one source again.
+`fix_media_catalog.mjs` exists because `pdfs/3.txt` is **not committed** — it is the extracted text of the official manual and stays out of the repo, so a fresh clone cannot run `parse_catalog.py`. Both carry the same price/disability-type logic — **change one, change the other.**
+
+As of 7 Aug 2569 the two are verified to produce **byte-identical** output. To re-check after editing either: put the source txt at `pdfs/3.txt`, then
+
+```bash
+python scripts/parse_catalog.py pdfs/3.txt   # writes data/mediaCatalog2568.json directly
+cp data/mediaCatalog2568.json /tmp/py.json
+npm run fix:media && diff /tmp/py.json data/mediaCatalog2568.json   # must be empty
+```
+
+`fix:media` being a **no-op** on freshly-parsed output is the check that the two have not drifted. (On Windows, run Python with `PYTHONIOENCODING=utf-8` or the Thai summary crashes on cp1252.) Keep the .mjs as long as the source txt stays uncommitted — the earlier note here said to delete it once the txt resurfaced, but that would leave a clone with no way to rebuild the catalog.
 
 Two extraction bugs that repeat, because the PDF causes both:
 - **Word-wrap splits Thai keywords mid-word** (`"บกพร่อง ทางสติปัญญา"`), so literal substring matching silently drops disability types. Always squash whitespace on *both* sides before comparing. This is what left `BE17103` mapped to `autism` only when real plans use it for `intellectual`.
@@ -337,11 +347,16 @@ Before pushing: `npm run build` — if the build fails, Vercel can't deploy.
 
 ## 13. Still open — do not guess these
 
-1. 🚧 **Reference codes from real plans — all 13 recorded; 10 verify, 3 are blocked on the missing source txt.** `data/realPlanCodes.json` now holds all 13 teacher-confirmed codes plus `BE1784` (code confirmed, disability type still unrecorded). Each entry records **the disability type the item was actually requested for**, not one we inferred. `npm run validate:media` checks both that the code exists in the official catalog *and* that `disabilityTypes` in `data/mediaCatalog2568.json` permits that type. Do not invent entries.
+1. ✅ **Reference codes from real plans — CLOSED 7 Aug 2569. All 13 recorded, all 13 verify.** `data/realPlanCodes.json` holds all 13 teacher-confirmed codes plus `BE1784` (code confirmed, disability type still unrecorded — that one line is the only thing left here). Each entry records **the disability type the item was actually requested for**, not one we inferred. `npm run validate:media` checks both that the code exists in the official catalog *and* that `disabilityTypes` in `data/mediaCatalog2568.json` permits that type. Do not invent entries.
 
-   **The remaining 3 (`BE1802`, `BE04102`, `BE17158`) are not a mapping bug — they are an extraction gap.** Their `eligibilityText` is `null`: `parse_details()` never captured the "ผู้ที่มีสิทธิ" block from the PDF, so there is no source text to match against. 94 of the 688 catalog items are in this state (61 never saw the block at all, 33 caught the mode marker but no body). Zero items have eligibility text that the matcher fails to parse — **the matching logic does not under-match.** The only real fix is recovering `pdfs/3.txt` and re-running `parse_catalog.py`. **Never hand-write `disabilityTypes` for these** — that would put data into the retrieval path with no official source behind it, which is exactly what §4 forbids.
+   **The 3 that used to fail (`BE1802`, `BE04102`, `BE17158`) were never a mapping bug and never a data gap — they were two extraction bugs, now fixed in `scripts/parse_catalog.py`.** The source text was recovered and re-run; all three now get their `disabilityTypes` from real text in the manual. Nothing was hand-written. The two bugs, both worth knowing because the PDF will cause them again:
 
-   The validator therefore separates the two failure modes: a code whose eligibility text *exists* but excludes a real-world type is a ❌ hard fail (a code bug); a code with *no* text is a 🕳️ tracked gap, pinned in `_knownExtractionGaps`. Check C2 fails if that set ever grows — a silent extraction regression is the thing this file exists to catch.
+   - **A code split across lines.** The detail tables extract cell-by-cell, and the first character of a code lands on a different line: `แท่งหลักนับเลข … ‌ E1802` / `B`. `[A-Z]{2}\d{4,5}` then matches nothing, so `parse_details()` never associated the block with the code at all (`spec` and `eligibilityMode` both `null` — that is the signature). Seen in 3 different geometries (letter on the next line, same line after a gap, previous line), so `repair_split_codes()` does not use position: it collects nearby lone capitals as candidates and accepts one only if it reassembles into a code that exists in the appendix index. Ambiguous → left alone, never guessed. (`E1802` reassembles to both `AE1802` and `BE1802`, so the appendix alone cannot decide it.)
+   - **`ที่มา :` truncation.** The old code cut the text at `ที่มา :` the same way it cut at the page footer. But a footer ends a page whereas `ที่มา :` is a floating image caption, and the column layout drops it *before* the eligibility body — so the body was truncated to the empty string (`eligibilityMode` set but `eligibilityText` `null` — the other signature). Credits are now **removed**, not truncated at. Footers still truncate, which is correct.
+
+   Fixing both took the catalog from 594 to 632 items with mapped types (94 → 56 with no source text at all), with **nothing lost or narrowed** — the 38 newly-mapped items and 15 widened ones all trace to real text in the manual that the old truncation was cutting off mid-sentence.
+
+   The validator still separates the two failure modes: a code whose eligibility text *exists* but excludes a real-world type is a ❌ hard fail (a code bug); a code with *no* text is a 🕳️ tracked gap, pinned in `_knownExtractionGaps`. **That pin is now empty and must stay that way.** If a future run puts a code back into it, that is an extraction regression — fix the parser, do not re-pin the code to make C2 pass, and never hand-write `disabilityTypes` (§4).
 2. **Provider/method/amount fields for coupon requests** (ผู้จัดหา, วิธีการ, จำนวนเงินที่ขออุดหนุน). The real form tracks who supplies each item (parent/school/hospital) and by what mechanism (subsidy/loan), plus a requested baht amount. The system does not currently collect this — the .docx export leaves these columns blank for the teacher to fill by hand. Confirm with the teacher whether this is worth automating before adding it.
 3. 🚧 **Math indicator text — repair complete (109/116), awaiting the teacher's proofread.** The source `math.pdf` has a font bug that renders every สระ `า` as `ำ`, which left all 116 math indicators unreadable (`"หำค่ำของตัวไม่ทรำบค่ำ"` for `"หาค่าของตัวไม่ทราบค่า"`). The **codes were never affected**, and **Thai was never affected**. `scripts/fix_math_curriculum_text.mjs` repairs the text and regression tests cover it, so the code path is live — but **`docs/math-curriculum-review.md` has not been sent to the teacher yet, and no special education teacher has confirmed the spelling.** Until she does:
    - Machine-verified ≠ teacher-verified. Green tests only prove the repair is internally consistent.
