@@ -14,24 +14,35 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { retrieveMedia } from "@/lib/retrieval";
+import {
+  normalizeGradeLevel,
+  resolveIndicatorCodes,
+  retrieveIndicators,
+  subjectsFromAbilityLevels,
+} from "@/lib/curriculum-retrieval";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/prompts";
 import { buildLLMSafePayload, assertNoPII } from "@/lib/pii-guard";
-import { toPlanDTO } from "@/lib/serializers";
-import type { CreatePlanRequest, LLMOutput, MediaEntry } from "@/lib/types";
+import { buildAnnualContextsByPlan, toPlanDTO } from "@/lib/serializers";
+import { fetchAnnualMediaContext } from "@/lib/plan-queries";
+import type { CreatePlanRequest, IndicatorEntry, LLMOutput, MediaEntry } from "@/lib/types";
 
 /** mock output สำหรับพัฒนา UI โดยไม่ต้องมี API key */
-function buildMockOutput(media: MediaEntry[]): LLMOutput {
+function buildMockOutput(media: MediaEntry[], indicators: IndicatorEntry[]): LLMOutput {
   return {
     iepGoals: [
       {
         text: "[MOCK] นักเรียนสามารถใช้สื่อที่กำหนดเพื่อสื่อสารความต้องการพื้นฐาน 3 อย่าง ได้ถูกต้อง 8 ใน 10 ครั้ง ภายในภาคเรียนนี้",
         criterion: "8 ใน 10 ครั้ง",
         timeframe: "ภายในภาคเรียนนี้",
+        // หยิบตัวชี้วัดตัวแรกที่ retrieve ได้ — ให้คน B เห็น UI กรณี "มีตัวชี้วัด"
+        indicatorCodes: indicators.slice(0, 1).map((i) => i.code),
       },
       {
         text: "[MOCK] นักเรียนสามารถทำกิจกรรมที่ได้รับมอบหมายจนเสร็จ โดยมีการเตือนไม่เกิน 2 ครั้ง ภายในภาคเรียนนี้",
         criterion: "เตือนไม่เกิน 2 ครั้ง",
         timeframe: "ภายในภาคเรียนนี้",
+        // ตั้งใจปล่อยว่าง — เป้าหมายด้านทักษะไม่อ้างตัวชี้วัด คน B ต้องเห็นเคสนี้ด้วย
+        indicatorCodes: [],
       },
     ],
     mediaRecommendations: media.map((m) => ({
@@ -77,16 +88,17 @@ function resolveMediaRecommendations(
 async function callLLM(params: {
   safePayload: ReturnType<typeof buildLLMSafePayload>;
   retrievedMedia: MediaEntry[];
+  retrievedIndicators: IndicatorEntry[];
 }): Promise<LLMOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const { safePayload, retrievedMedia } = params;
+  const { safePayload, retrievedMedia, retrievedIndicators } = params;
 
   // 🔒 PII GUARD — ตรวจก่อนส่งออกนอกระบบทุกครั้ง จะ throw ถ้าเจอ PII ปนมา
   assertNoPII(safePayload, "LLM request payload");
 
   if (process.env.USE_MOCK === "true" || !apiKey) {
     await new Promise((r) => setTimeout(r, 800)); // จำลอง latency ให้เห็น loading state
-    return buildMockOutput(retrievedMedia);
+    return buildMockOutput(retrievedMedia, retrievedIndicators);
   }
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -109,6 +121,7 @@ async function callLLM(params: {
             strengths: safePayload.strengths,
             gradeLevel: safePayload.gradeLevel,
             retrievedMedia,
+            retrievedIndicators,
           }),
         },
       ],
@@ -163,6 +176,17 @@ export async function POST(request: Request) {
       body.abilityLevels ?? {}
     );
 
+    // ── STEP 2.5: RETRIEVAL — ตัวชี้วัดตามหลักสูตร (ไม่ใช้ AI เช่นกัน) ──
+    // ไม่ระบุวิชา → ดูจาก abilityLevels ให้เอง (reading/writing → ไทย, math → คณิต)
+    // ไม่มีระดับชั้น/ไม่ตรงกลุ่มสาระ → [] แล้วระบบทำงานเหมือนก่อนมีฟีเจอร์นี้ทุกประการ
+    const subjects = body.subjects?.length
+      ? body.subjects
+      : subjectsFromAbilityLevels(body.abilityLevels ?? {});
+    const curriculumGrade = normalizeGradeLevel(body.curriculumGrade ?? student.gradeLevel);
+    const retrievedIndicators = curriculumGrade
+      ? retrieveIndicators({ subjects, gradeLevel: curriculumGrade })
+      : [];
+
     // ── STEP 3: GENERATION — LLM เรียบเรียงจากข้อมูลที่ verified แล้ว ──
     // 🔒 สร้าง payload ผ่าน whitelist เท่านั้น — PII ของ student ไม่มีทางหลุดออกไป
     const safePayload = buildLLMSafePayload({
@@ -174,7 +198,7 @@ export async function POST(request: Request) {
 
     let llm: LLMOutput;
     try {
-      llm = await callLLM({ safePayload, retrievedMedia });
+      llm = await callLLM({ safePayload, retrievedMedia, retrievedIndicators });
     } catch (e) {
       const msg =
         (e as Error).message === "PARSE_ERROR"
@@ -198,14 +222,22 @@ export async function POST(request: Request) {
         homeroomTeacherName: body.homeroomTeacherName?.trim() || null,
         meetingDate: body.meetingDate?.trim() || null,
         goals: {
-          create: llm.iepGoals.map((g, i) => ({
-            aiOriginal: g.text,
-            finalText: g.text, // เริ่มต้นเท่ากัน ถ้าครูแก้ finalText จะต่างออกไป
-            criterion: g.criterion ?? null,
-            timeframe: g.timeframe ?? null,
-            isSelected: i === 0, // เลือกข้อแรกไว้ก่อน ครูเปลี่ยนได้
-            orderIndex: i,
-          })),
+          create: llm.iepGoals.map((g, i) => {
+            // 🔒 รหัสตัวชี้วัดผ่าน gate เดียวกับสื่อ — ที่ไม่อยู่ใน retrieval ถูกทิ้ง
+            const codes = resolveIndicatorCodes(g.indicatorCodes, retrievedIndicators).map(
+              (ind) => ind.code
+            );
+            return {
+              aiOriginal: g.text,
+              finalText: g.text, // เริ่มต้นเท่ากัน ถ้าครูแก้ finalText จะต่างออกไป
+              criterion: g.criterion ?? null,
+              timeframe: g.timeframe ?? null,
+              aiIndicatorCodes: codes,
+              finalIndicatorCodes: codes, // เริ่มต้นเท่ากันแบบเดียวกับ aiOriginal/finalText
+              isSelected: i === 0, // เลือกข้อแรกไว้ก่อน ครูเปลี่ยนได้
+              orderIndex: i,
+            };
+          }),
         },
         media: {
           create: resolveMediaRecommendations(llm.mediaRecommendations, retrievedMedia).map(
@@ -228,7 +260,14 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(toPlanDTO(plan), { status: 201 });
+    // แผนที่เพิ่งสร้างอาจไม่ใช่แผนแรกของปี — ยอดต้องรวมแผนอื่นในปีเดียวกันด้วย
+    const annual = await fetchAnnualMediaContext({
+      studentId: plan.studentId,
+      academicYear: plan.academicYear,
+      excludePlanId: plan.id,
+    });
+
+    return NextResponse.json(toPlanDTO(plan, annual), { status: 201 });
   } catch (err) {
     console.error("POST /api/plans failed:", err);
     return NextResponse.json({ error: "สร้างแผนไม่สำเร็จ" }, { status: 500 });
@@ -251,7 +290,15 @@ export async function GET(request: Request) {
       },
     });
 
-    return NextResponse.json(plans.map(toPlanDTO));
+    // เพดานเงินอุดหนุนนับรวมทั้งปีการศึกษา ไม่ใช่ต่อแผน (ดู lib/serializers.ts)
+    // query ข้างบนโหลดแผน "ทั้งหมด" ที่เข้าเงื่อนไขพร้อม media มาแล้ว จึงคิดยอด
+    // ในหน่วยความจำได้ครบ ไม่ต้อง query เพิ่มต่อแผน (ถ้า query ในลูปจะกลายเป็น N+1)
+    const annualByPlan = buildAnnualContextsByPlan(plans);
+
+    return NextResponse.json(
+      // ⚠️ ห้ามเขียน plans.map(toPlanDTO) — map จะส่ง index เป็นอาร์กิวเมนต์ที่ 2
+      plans.map((p) => toPlanDTO(p, annualByPlan.get(p.id)))
+    );
   } catch (err) {
     console.error("GET /api/plans failed:", err);
     return NextResponse.json({ error: "ดึงข้อมูลแผนไม่สำเร็จ" }, { status: 500 });
