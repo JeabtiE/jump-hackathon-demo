@@ -69,6 +69,46 @@ check(
 );
 check("getAvailableSubjects = เฉพาะวิชาที่เปิดจริง", getAvailableSubjects(), ["thai", "math"]);
 
+// ── 🔒 ด้านที่ไม่ใช่วิชาการต้องไม่แตะระบบตัวชี้วัดเลย ──
+//
+// ครูยืนยัน (7 ส.ค. 2569): "วิชาที่ใช้ความสามารถทางกาย เช่น พละศึกษา จะไม่ค่อยได้
+// ย้อนชั้นปี จะใช้ชั้นปีจริงเลยเพราะเด็กทำได้ แต่ถ้าเป็นวิชาที่ใช้สติปัญญา
+// มักจะได้ย้อนชั้นปีตัวชี้วัด" → GRADE_SPAN ใช้ได้เฉพาะวิชาสติปัญญา
+//
+// ด่านแรกที่กันเรื่องนี้คือ DOMAIN_TO_SUBJECT ที่ไม่ผูก communication/behavior/
+// selfHelp กับกลุ่มสาระใดเลย เทสต์ชุดนี้ตรึงไว้ว่าเส้นทางนั้นจบที่ [] จริง
+// ไม่ใช่แค่ "บังเอิญยังไม่มีข้อมูล"
+
+console.log("\n── 🔒 ด้านทักษะ (ไม่ใช่วิชาการ) ไม่แตะตัวชี้วัด ──");
+
+for (const domain of ["communication", "behavior", "selfHelp"]) {
+  const subjects = subjectsFromAbilityLevels({ [domain]: "any_level" });
+  check(`${domain} เดี่ยว → ไม่ผูกกลุ่มสาระ`, subjects, []);
+  check(
+    `${domain} → retrieveIndicators คืน [] (ไม่มีทางเข้าถึง GRADE_SPAN)`,
+    retrieveIndicators({ subjects, gradeLevel: "ป.4" }).length,
+    0
+  );
+}
+
+check(
+  "ทั้ง 3 ด้านพร้อมกัน → ยังคง [] (แผนทักษะล้วนอ้างตัวชี้วัดว่างได้ CLAUDE.md §4)",
+  subjectsFromAbilityLevels({ communication: "a", behavior: "b", selfHelp: "c" }),
+  []
+);
+check(
+  "ทักษะ + วิชาการ → ได้เฉพาะวิชาการ ด้านทักษะไม่เพิ่มวิชาเข้ามา",
+  subjectsFromAbilityLevels({ communication: "a", selfHelp: "b", reading: "c" }),
+  ["thai"]
+);
+check(
+  "DOMAIN_TO_SUBJECT มีแค่ 3 key ที่เป็นวิชาการ — เพิ่ม key ใหม่ต้องตั้งใจ",
+  ["reading", "writing", "math", "communication", "behavior", "selfHelp"].filter(
+    (d) => subjectsFromAbilityLevels({ [d]: "x" }).length > 0
+  ),
+  ["reading", "writing", "math"]
+);
+
 console.log("\n── retrieveIndicators ──");
 const p1 = retrieveIndicators({ subjects: ["thai"], gradeLevel: "ป.1" });
 check("ป.1 ไม่มีชั้นต่ำกว่า → 23 ตัวชี้วัด", p1.length, 23);
@@ -89,6 +129,29 @@ const p4only = retrieveIndicators({
   includeLowerGrades: false,
 });
 check("ปิด includeLowerGrades → เฉพาะ ป.4", [...new Set(p4only.map((i) => i.grade))], ["ป.4"]);
+
+// ช่วงชั้นคิดแยกรายวิชา (GRADE_SPAN_SUBJECTS) ไม่ใช่ค่าเดียวใช้ร่วมกันทั้งแผน
+// ตอนนี้ thai/math เป็นวิชาสติปัญญาทั้งคู่จึงย้อนชั้นได้เหมือนกัน — ตรึงไว้กัน
+// การเพิ่มวิชาทางกายในอนาคตแล้วเผลอให้ใช้ GRADE_SPAN ร่วมกันไปด้วย
+check(
+  "วิชาสติปัญญาย้อนชั้นได้เท่ากันทุกวิชา (thai/math → ป.2-ป.4)",
+  ["thai", "math"].map((s) => [
+    ...new Set(retrieveIndicators({ subjects: [s], gradeLevel: "ป.4" }).map((i) => i.grade)),
+  ]),
+  [
+    ["ป.2", "ป.3", "ป.4"],
+    ["ป.2", "ป.3", "ป.4"],
+  ]
+);
+check(
+  "ขอ 2 วิชาพร้อมกัน → ช่วงชั้นของแต่ละวิชาไม่รบกวนกัน",
+  [
+    ...new Set(
+      retrieveIndicators({ subjects: ["thai", "math"], gradeLevel: "ป.4" }).map((i) => i.grade)
+    ),
+  ].sort(),
+  ["ป.2", "ป.3", "ป.4"]
+);
 
 check("รหัสไม่ซ้ำ", p4.length, new Set(p4.map((i) => i.code)).size);
 check(

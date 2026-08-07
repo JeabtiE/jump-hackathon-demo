@@ -48,19 +48,58 @@ const ENABLED_SUBJECTS: CurriculumSubject[] = ["thai", "math"];
  * เหตุผล: แผน IEP จริงมักปรับตัวชี้วัดจากชั้นที่ต่ำกว่าที่นักเรียนลงทะเบียน
  * ถ้าเสนอเฉพาะชั้นที่เรียนอยู่ ครูจะใช้ไม่ได้เลยกับเด็กที่ห่างจากระดับชั้นมาก
  * แต่ถ้าเปิดหมดทุกชั้น prompt จะยาวและ LLM มีตัวเลือกกว้างเกินจนจับคู่มั่ว
+ *
+ * ⚠️ การย้อนชั้นปีใช้ได้กับ "วิชาที่ใช้สติปัญญา" เท่านั้น — ครูยืนยัน (7 ส.ค. 2569):
+ *
+ *      "วิชาที่ใช้ความสามารถทางกาย เช่น พละศึกษา จะไม่ค่อยได้ย้อนชั้นปี
+ *       จะใช้ชั้นปีจริงเลยเพราะเด็กทำได้ แต่ถ้าเป็นวิชาที่ใช้สติปัญญา
+ *       มักจะได้ย้อนชั้นปีตัวชี้วัด"
+ *
+ *    แปลว่าเด็กที่ตามวิชาการไม่ทัน อาจทำพละ/ศิลปะ/การงานได้ตามชั้นจริงของตัวเอง
+ *    การย้อนชั้นให้วิชาพวกนี้เท่ากับประเมินเด็กต่ำกว่าความเป็นจริง
+ *
+ *    ตอนนี้ระบบยังไม่ผิดกฎข้อนี้ เพราะ ENABLED_SUBJECTS มีแค่ thai/math
+ *    ซึ่งเป็นวิชาสติปัญญาทั้งคู่ → ย้อนชั้นได้ถูกต้องแล้ว
+ *    การป้องกันชั้นที่สองอยู่ที่ DOMAIN_TO_SUBJECT (ดูคอมเมนต์ตรงนั้น)
+ *
+ *    🔑 ถ้าจะเพิ่มวิชาที่ใช้ความสามารถทางกาย (พละ ศิลปะ การงาน) เข้ามา
+ *       ห้ามใส่แล้วปล่อยให้ใช้ GRADE_SPAN ร่วมกัน ต้องแยกให้วิชากลุ่มนั้น
+ *       includeLowerGrades = false เสมอ ไม่ใช่ค่า default ของทั้งระบบ
  */
 const GRADE_SPAN = 3;
+
+/**
+ * วิชาที่ย้อนชั้นปีได้ (วิชาที่ใช้สติปัญญา ตามคำยืนยันของครูที่ GRADE_SPAN)
+ *
+ * ตอนนี้เท่ากับ ENABLED_SUBJECTS พอดี — ประกาศแยกไว้เพื่อให้ตอนเพิ่มวิชาใหม่
+ * คนเพิ่มต้องตัดสินใจอย่างตั้งใจว่าวิชานั้นอยู่กลุ่มไหน ไม่ใช่ได้ย้อนชั้นไปโดยปริยาย
+ */
+const GRADE_SPAN_SUBJECTS: readonly CurriculumSubject[] = ["thai", "math"];
 
 /** ลำดับชั้น — index ใช้คำนวณช่วงชั้นใน retrieveIndicators */
 const GRADE_ORDER = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 
-/** ด้านความสามารถใน AbilityLevels → กลุ่มสาระ */
+/**
+ * ด้านความสามารถใน AbilityLevels → กลุ่มสาระ
+ *
+ * 🔒 ตารางนี้คือด่านแรกที่กัน "ด้านที่ไม่ใช่วิชาการ" ออกจากการอ้างตัวชี้วัด
+ *
+ *    ยืนยันแล้วว่ามีแค่ 3 key: reading/writing → thai, math → math
+ *    ส่วน communication / behavior / selfHelp ตั้งใจไม่ใส่ ไม่ใช่ลืม
+ *    → subjectsFromAbilityLevels() คืน [] → retrieveIndicators() คืน []
+ *    → เป้าหมายกลุ่มทักษะจึงไม่มีทางแตะ GRADE_SPAN ตั้งแต่ต้นทาง
+ *
+ *    ตรงกับโครงสร้างแผนจริง: ส่วนที่ 5 แยก "ทักษะ" (ช่วยเหลือตนเอง สื่อสาร
+ *    สังคม กล้ามเนื้อ) ออกจาก "วิชาการที่อ้างมาตรฐานตัวชี้วัด" (CLAUDE.md §14)
+ *    และตรงกับกฎ "ตัวชี้วัดว่างเป็นคำตอบที่ถูกต้อง" (CLAUDE.md §4)
+ *
+ *    ⚠️ การเพิ่ม key ที่นี่ = เปิดให้ด้านนั้นดึงตัวชี้วัดได้ ต้องเช็คก่อนว่า
+ *       วิชาปลายทางย้อนชั้นปีได้ไหม (ดู GRADE_SPAN_SUBJECTS)
+ */
 const DOMAIN_TO_SUBJECT: Record<string, CurriculumSubject> = {
   reading: "thai",
   writing: "thai",
   math: "math",
-  // communication / behavior / selfHelp ไม่ผูกกลุ่มสาระ — แผนจริงแยก "ทักษะ"
-  // ออกจาก "วิชาการที่อ้างตัวชี้วัด" อยู่แล้ว (CLAUDE.md §14)
 };
 
 export const SUBJECT_LABEL: Record<CurriculumSubject, string> = {
@@ -129,9 +168,6 @@ export function retrieveIndicators(params: {
   const gradeIndex = GRADE_ORDER.indexOf(grade);
   if (gradeIndex < 0) return [];
 
-  const from = includeLowerGrades ? Math.max(0, gradeIndex - (GRADE_SPAN - 1)) : gradeIndex;
-  const grades = GRADE_ORDER.slice(from, gradeIndex + 1);
-
   const standardFilter = standards?.length ? new Set(standards) : null;
   const results: IndicatorEntry[] = [];
   const seen = new Set<string>();
@@ -140,6 +176,13 @@ export function retrieveIndicators(params: {
     if (!subjects.includes(subject)) continue;
     const bySubject = curriculum[subject];
     if (!bySubject) continue;
+
+    // ช่วงชั้นคิดแยกรายวิชา ไม่ใช่ค่าเดียวใช้ร่วมกันทั้งแผน
+    // วิชาที่ใช้ความสามารถทางกายต้องใช้ชั้นจริงเสมอแม้ผู้เรียกขอย้อนชั้นมา
+    // (ดูเหตุผลและคำยืนยันของครูที่ GRADE_SPAN)
+    const spanAllowed = includeLowerGrades && GRADE_SPAN_SUBJECTS.includes(subject);
+    const from = spanAllowed ? Math.max(0, gradeIndex - (GRADE_SPAN - 1)) : gradeIndex;
+    const grades = GRADE_ORDER.slice(from, gradeIndex + 1);
 
     for (const g of grades) {
       for (const std of bySubject[g] ?? []) {
