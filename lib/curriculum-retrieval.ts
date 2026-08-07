@@ -22,19 +22,14 @@ type RawCurriculum = Record<string, Record<string, RawStandard[]>>;
 const curriculum = curriculumRaw as unknown as RawCurriculum;
 
 /**
- * ⚠️ วิชาที่เปิดใช้จริง — ยังไม่รวม "math"
+ * วิชาที่เปิดใช้จริง
  *
- * ข้อความตัวชี้วัดคณิตศาสตร์ใน curriculum.json เสียทั้ง 116 รายการ:
- * font ในไฟล์ math.pdf ต้นทางแปลง "า" เป็น "ำ" หมด (ตรวจแล้ว: มี "า" 0/116 รายการ)
- * เช่น "บอกจำนวนของสิ่งต่ำง ๆ ... อ่ำนและเขียน" — รหัสถูก แต่ข้อความอ่านไม่ได้
- *
- * ปล่อยไว้จะเสียหาย 2 ทาง: LLM จับคู่ตัวชี้วัดผิดเพราะอ่านไม่รู้เรื่อง
- * และข้อความเพี้ยนขึ้นในเอกสาร .docx ที่ครูต้องเซ็นจริง
- *
- * → งานแก้อยู่ใน branch data/fix-math-curriculum-text (word-map)
- *   ครูตรวจตัวอักษรผ่านเมื่อไหร่ ค่อยเพิ่ม "math" ลงบรรทัดล่างนี้ แก้ที่เดียวจบ
+ * ⚠️ "math" เพิ่งเปิดใน branch นี้หลังซ่อมข้อความที่ font ใน math.pdf ทำเพี้ยน
+ *    (สระ "า" กลายเป็น "ำ" ทั้ง 116 รายการ — ดู scripts/fix_math_curriculum_text.mjs)
+ *    ห้าม merge เข้า main จนกว่าครูจะตรวจ docs/math-curriculum-review.md ครบ
+ *    ถ้าครูเจอคำที่ยังผิด ให้แก้ที่ RESTORE ในสคริปต์แล้วรันใหม่ อย่าแก้ JSON ด้วยมือ
  */
-const ENABLED_SUBJECTS: CurriculumSubject[] = ["thai"];
+const ENABLED_SUBJECTS: CurriculumSubject[] = ["thai", "math"];
 
 /**
  * จำนวนชั้นสูงสุดที่ retrieve พร้อมกันเมื่อ includeLowerGrades = true
