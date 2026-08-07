@@ -96,6 +96,24 @@ Both paths are the same four parts. If you add a third, copy this structure rath
 
 Scope note: `curriculum.json` covers **ป.1–6, Thai and Math only** — confirmed sufficient for all 16 real students. `ENABLED_SUBJECTS` in `lib/curriculum-retrieval.ts` is the single switch for which subjects are live.
 
+**How the media data files are produced — never hand-edit them:**
+
+```
+คู่มือฯ 2568 (PDF → pdfs/3.txt, NOT in the repo)
+   ↓ scripts/parse_catalog.py          ← extraction (needs the source txt)
+data/mediaCatalog2568.json  (688 items, the full official catalog)
+   ↓ scripts/fix_media_catalog.mjs     ← npm run fix:media, idempotent
+   ↓ scripts/build_mapping.py          ← curated SELECTION, not automatic
+data/mappingTable.json      (what retrieval actually serves)
+   ↓ scripts/validate_media_catalog.mjs ← npm run validate:media
+```
+
+`fix_media_catalog.mjs` exists only because `pdfs/3.txt` was never committed, so `parse_catalog.py` cannot be re-run. Both carry the same price/disability-type logic — **change one, change the other.** If the source txt ever resurfaces, re-run `parse_catalog.py`, confirm the output matches, and delete the .mjs so there is one source again.
+
+Two extraction bugs that repeat, because the PDF causes both:
+- **Word-wrap splits Thai keywords mid-word** (`"บกพร่อง ทางสติปัญญา"`), so literal substring matching silently drops disability types. Always squash whitespace on *both* sides before comparing. This is what left `BE17103` mapped to `autism` only when real plans use it for `intellectual`.
+- **Prices leak into item names** when an editorial marker (`ปรับคุณสมบัติ`, `เพิ่มเติม`) trails the price. Anchor the price regex on `บาท` — never on a trailing number, because many genuine names end in a spec number (`ขนาด 500 GB`, `พู่กัน ขนาดเบอร์ 12`).
+
 > 🚧 **Thai is validated. Math is not.** `ENABLED_SUBJECTS` currently lists both, but that only means *the code path works* — the Math indicator text was machine-repaired after a font bug in the source PDF and **no teacher has proofread it yet** (see §13.3). Passing tests say the repair is self-consistent; they say nothing about whether the Thai spelling is right. Do not treat "tests green" as "data verified", and do not put Math in front of the teacher as finished work until §13.3 is closed. Dropping `"math"` from that array is the one-line rollback.
 
 ### Why this matters
@@ -319,7 +337,11 @@ Before pushing: `npm run build` — if the build fails, Vercel can't deploy.
 
 ## 13. Still open — do not guess these
 
-1. **Item codes (รหัส) for the media/equipment catalog.** Real forms reference codes like `BE1784` for specific items (confirmed from real documents: "หนังสือภาพคำศัพท์พร้อมปากกา" = `BE1784`, seen requested for two different disability types). We only have one confirmed code. `data/mappingTable.json` does not yet have a `code` field — adding one is a nice-to-have, not urgent, since the export currently leaves that column blank for manual entry.
+1. 🚧 **Reference codes from real plans — all 13 recorded; 10 verify, 3 are blocked on the missing source txt.** `data/realPlanCodes.json` now holds all 13 teacher-confirmed codes plus `BE1784` (code confirmed, disability type still unrecorded). Each entry records **the disability type the item was actually requested for**, not one we inferred. `npm run validate:media` checks both that the code exists in the official catalog *and* that `disabilityTypes` in `data/mediaCatalog2568.json` permits that type. Do not invent entries.
+
+   **The remaining 3 (`BE1802`, `BE04102`, `BE17158`) are not a mapping bug — they are an extraction gap.** Their `eligibilityText` is `null`: `parse_details()` never captured the "ผู้ที่มีสิทธิ" block from the PDF, so there is no source text to match against. 94 of the 688 catalog items are in this state (61 never saw the block at all, 33 caught the mode marker but no body). Zero items have eligibility text that the matcher fails to parse — **the matching logic does not under-match.** The only real fix is recovering `pdfs/3.txt` and re-running `parse_catalog.py`. **Never hand-write `disabilityTypes` for these** — that would put data into the retrieval path with no official source behind it, which is exactly what §4 forbids.
+
+   The validator therefore separates the two failure modes: a code whose eligibility text *exists* but excludes a real-world type is a ❌ hard fail (a code bug); a code with *no* text is a 🕳️ tracked gap, pinned in `_knownExtractionGaps`. Check C2 fails if that set ever grows — a silent extraction regression is the thing this file exists to catch.
 2. **Provider/method/amount fields for coupon requests** (ผู้จัดหา, วิธีการ, จำนวนเงินที่ขออุดหนุน). The real form tracks who supplies each item (parent/school/hospital) and by what mechanism (subsidy/loan), plus a requested baht amount. The system does not currently collect this — the .docx export leaves these columns blank for the teacher to fill by hand. Confirm with the teacher whether this is worth automating before adding it.
 3. 🚧 **Math indicator text — repair complete (109/116), awaiting the teacher's proofread.** The source `math.pdf` has a font bug that renders every สระ `า` as `ำ`, which left all 116 math indicators unreadable (`"หำค่ำของตัวไม่ทรำบค่ำ"` for `"หาค่าของตัวไม่ทราบค่า"`). The **codes were never affected**, and **Thai was never affected**. `scripts/fix_math_curriculum_text.mjs` repairs the text and regression tests cover it, so the code path is live — but **`docs/math-curriculum-review.md` has not been sent to the teacher yet, and no special education teacher has confirmed the spelling.** Until she does:
    - Machine-verified ≠ teacher-verified. Green tests only prove the repair is internally consistent.
