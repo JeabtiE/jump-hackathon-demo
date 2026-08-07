@@ -60,35 +60,60 @@ The system deliberately **separates retrieval from generation**. Do not blur thi
 ```
 Structured input (dropdowns)
     ↓
-RETRIEVAL — exact-match lookup in data/mappingTable.json
-    NO AI. Deterministic. Returns only media items that are
-    actually claimable under Thai government subsidy rules.
+RETRIEVAL — exact-match lookup in a JSON file under data/
+    NO AI. Deterministic. Returns only entries that are
+    valid under the official Thai government source document.
     ↓
 GENERATION — LLM (Claude API) with few-shot prompting
     Receives the retrieved list as constrained context.
     Its ONLY job is to write natural bureaucratic Thai prose.
-    It may NOT propose items outside the retrieved list.
+    It may NOT propose anything outside the retrieved list.
     ↓
-Persist to DB: store aiOriginal AND finalText separately
+GATE — match the LLM's output back to the retrieved entries.
+    Anything that doesn't match is DROPPED, not repaired.
+    ↓
+Persist to DB: store the AI's version AND the teacher's separately
     ↓
 HUMAN REVIEW — teacher edits, selects, approves
     ↓
 Export / Copy — never auto-submits to government systems
 ```
 
+### Where this pattern is used — currently two places
+
+Both paths are the same four parts. If you add a third, copy this structure rather than inventing a new one.
+
+| | **Media / equipment** (บัญชี ก-ข) | **Curriculum indicators** (ตัวชี้วัด) |
+|---|---|---|
+| Official source | คู่มือรายการสิ่งอำนวยความสะดวกฯ พ.ศ. 2568 | หลักสูตรแกนกลาง พ.ศ. 2551 (ฉบับปรับปรุง 2560) |
+| Data file | `data/mappingTable.json` | `data/curriculum.json` |
+| Retrieval | `lib/retrieval.ts` → `retrieveMedia()` | `lib/curriculum-retrieval.ts` → `retrieveIndicators()` |
+| Keyed by | disability type + ability levels | subject + grade (derived from ability levels + `Student.gradeLevel`) |
+| LLM's only job | write the justification (`reason`) | pick which retrieved indicator a goal adapts, and phrase the goal |
+| Gate | `resolveMediaRecommendations()` in `app/api/plans/route.ts` | `resolveIndicatorCodes()` in `lib/curriculum-retrieval.ts` |
+| Stored as | `PlanMedia.aiReason` / `finalReason` | `PlanGoal.aiIndicatorCodes` / `finalIndicatorCodes` |
+| Appears in export | ส่วนที่ 6 (table incl. รหัส, ราคา, วิธีการ) | ส่วนที่ 5 (code under each goal + full indicator text) |
+
+Scope note: `curriculum.json` covers **ป.1–6, Thai and Math only** — confirmed sufficient for all 16 real students. `ENABLED_SUBJECTS` in `lib/curriculum-retrieval.ts` is the single switch for which subjects are live (Math is off until its text is validated — see §13).
+
 ### Why this matters
 
 Media recommendations map to **real government budget claims**. A hallucinated item means a rejected claim and wasted teacher time. Rule-based retrieval makes hallucination structurally impossible in that path.
+
+Indicator codes have the same property for a different reason: `ท 1.1 ป.1/1` is a citation of a legal curriculum document that the IEP committee reads and signs. A plausible-looking but non-existent code is worse than no code at all — it is wrong in a way that looks authoritative. So the LLM never types a code; it only picks from codes the system handed it, and anything it returns that we didn't send is dropped silently.
 
 Few-shot examples come from **real IEP documents** (anonymized) so the LLM mimics genuine bureaucratic Thai phrasing rather than inventing plausible-sounding text.
 
 ### Rules you must enforce when writing code
 
 - ❌ Never let the LLM choose which media/equipment to recommend
+- ❌ Never let the LLM produce a curriculum indicator code that wasn't in the retrieved list
 - ❌ Never auto-submit anything to a government system
 - ❌ Never auto-fix a consistency warning — flag it, let the teacher decide
 - ✅ Always present 2–3 goal options, never a single answer (preserves teacher judgement)
 - ✅ Always show the reasoning behind a recommendation (no black box)
+- ✅ An empty result is a valid answer — no matching indicator means `[]`, never a forced match
+  (goals for self-help, behaviour, and communication legitimately cite no subject indicator)
 
 ### The design philosophy behind it
 
@@ -148,6 +173,7 @@ prisma/schema.prisma               app/page.tsx
 app/api/**                         app/stats/page.tsx
 lib/prompts.ts                     components/**
 lib/retrieval.ts                   tailwind.config.ts
+lib/curriculum-retrieval.ts
 lib/serializers.ts
 lib/db.ts
 lib/pii-guard.ts  🔒
@@ -293,7 +319,9 @@ Before pushing: `npm run build` — if the build fails, Vercel can't deploy.
 
 1. **Item codes (รหัส) for the media/equipment catalog.** Real forms reference codes like `BE1784` for specific items (confirmed from real documents: "หนังสือภาพคำศัพท์พร้อมปากกา" = `BE1784`, seen requested for two different disability types). We only have one confirmed code. `data/mappingTable.json` does not yet have a `code` field — adding one is a nice-to-have, not urgent, since the export currently leaves that column blank for manual entry.
 2. **Provider/method/amount fields for coupon requests** (ผู้จัดหา, วิธีการ, จำนวนเงินที่ขออุดหนุน). The real form tracks who supplies each item (parent/school/hospital) and by what mechanism (subsidy/loan), plus a requested baht amount. The system does not currently collect this — the .docx export leaves these columns blank for the teacher to fill by hand. Confirm with the teacher whether this is worth automating before adding it.
-3. ~~Whether the export should include sections 1–4~~ — **resolved 24 July.** Sections 1–4 are now populated from the PII fields on `Student` (see §9). The teacher enters them once when adding a student; every subsequent plan and every annual review reuses them.
+3. **Math indicator text in `data/curriculum.json`.** The source `math.pdf` has a font bug that renders every สระ `า` as `ำ` — all 116 math indicators were unreadable (`"หำค่ำของตัวไม่ทรำบค่ำ"` for `"หาค่าของตัวไม่ทราบค่า"`). The **codes were never affected**. A repair script (`scripts/fix_math_curriculum_text.mjs`) fixes 109 of them; branch `data/fix-math-curriculum-text` holds the fix plus `docs/math-curriculum-review.md`, a before/after list for the teacher to proofread. Math stays out of `ENABLED_SUBJECTS` until she signs off — **do not merge that branch first.** Thai indicators were never affected and are live.
+4. **Whether a goal should cite indicators from a lower grade than the student's enrolled grade.** The system currently assumes yes — `retrieveIndicators()` returns the enrolled grade plus the two below it (`GRADE_SPAN = 3`), on the reasoning that a ป.4 student working at a ป.1 level needs ป.1 indicators. This has not been confirmed with the teacher. If she says plans must cite the enrolled grade only, flip `includeLowerGrades` to default `false`; if she says it should reach further back, raise `GRADE_SPAN`. One constant either way.
+5. ~~Whether the export should include sections 1–4~~ — **resolved 24 July.** Sections 1–4 are now populated from the PII fields on `Student` (see §9). The teacher enters them once when adding a student; every subsequent plan and every annual review reuses them.
 
 ## 14. Real document structure (confirmed 24 July from 4 real anonymized IEP examples)
 
