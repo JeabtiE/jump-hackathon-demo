@@ -66,11 +66,111 @@ const MEASURABLE_WORDS = /ร้อยละ|ทุกครั้ง|ด้ว�
 const CHILD_NAME_PREFIX = /(?:เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)\s*[ก-ฮเแโใไ]\S*/;
 
 /**
- * เพดานเงินอุดหนุนสื่อ ต่อนักเรียน 1 คน ต่อปี
+ * เพดานเงินอุดหนุนสื่อ ต่อนักเรียน 1 คน ต่อ "ปีการศึกษา"
  * ยืนยันจาก 2 ทาง: แผนจริงทั้ง 2 ฉบับขอรวมพอดี 2,000 บาท
  * และคู่มือระบบ IEP Online (หน้า 22) เตือนเมื่อยอดเกินจำนวนนี้
+ *
+ * ⚠️ ระเบียบระบุว่า "แต่ละรายมีวงเงินไม่เกิน ๒,๐๐๐ บาทต่อปี" — หน่วยคือ
+ *    นักเรียน 1 คน ต่อ 1 ปีการศึกษา ไม่ใช่ต่อ 1 แผน นักเรียนคนเดียวมีได้
+ *    หลายแผนในปีเดียวกัน (เช่น ภาคเรียน 1 และ 2) ยอดต้องรวมข้ามแผน
+ *    ไม่งั้นแผนละ 1,500 บาท สองแผนจะผ่านทั้งคู่ทั้งที่รวมแล้ว 3,000 บาท
+ *
+ *    และเป็น "soft warning" เสมอ เพราะระเบียบต่อท้ายว่า
+ *    "เว้นแต่คณะกรรมการ...จะพิจารณาเป็นอย่างอื่น" — คณะกรรมการยกเว้นได้
  */
 const MEDIA_BUDGET_CAP_BAHT = 2000;
+
+/** เฉพาะฟิลด์ที่ใช้คิดยอดเงิน — ให้ route select มาแค่นี้พอ ไม่ต้องดึงทั้งแถว */
+type PricedMedia = Pick<MediaRecord, "price" | "isApproved">;
+
+/**
+ * ยอดสื่อที่อนุมัติแล้วของ "แผนอื่น" ในปีการศึกษาเดียวกัน (ไม่รวมแผนที่กำลัง serialize)
+ *
+ * ตั้งใจให้ caller เป็นคนหามาให้ ไม่ query เองใน serializer เพราะ:
+ *   - GET /api/plans โหลดแผนทั้งหมดของนักเรียนพร้อม media อยู่แล้ว → จัดกลุ่มในหน่วยความจำได้ ไม่ต้อง query เพิ่มเลย
+ *   - ถ้า query ในนี้จะกลายเป็น N+1 (1 query ต่อ 1 แผนในลิสต์) และต้อง import prisma
+ *     เข้ามาในไฟล์นี้ ทำให้ test-warnings.mjs ที่เป็น unit test ล้วนต้องมี DB
+ */
+export type AnnualMediaContext = {
+  /** ยอดบาทรวมของแผนอื่นในปีเดียวกัน */
+  otherPlansApprovedBaht: number;
+  /** จำนวนแผนอื่นที่นับรวมมา — ใช้บอกครูว่ายอดมาจากกี่แผน */
+  otherPlanCount: number;
+  /** รายการที่อนุมัติแล้วแต่ไม่มีราคาในแผนอื่น (บัญชี ก / ขอยืม) */
+  otherUncounted: number;
+};
+
+/** ค่าเริ่มต้น = ไม่มีแผนอื่น → พฤติกรรมเท่าเดิมทุกประการ (ใช้ใน unit test ที่ไม่มี DB) */
+export const EMPTY_ANNUAL: AnnualMediaContext = {
+  otherPlansApprovedBaht: 0,
+  otherPlanCount: 0,
+  otherUncounted: 0,
+};
+
+/** ยอดบาทของสื่อที่อนุมัติแล้ว + จำนวนรายการที่ไม่มีราคา (ไม่นับเข้ายอด) */
+export function sumApprovedMedia(media: PricedMedia[]): {
+  baht: number;
+  uncounted: number;
+} {
+  const approved = media.filter((m) => m.isApproved);
+  const prices = approved
+    .map((m) => parsePriceBaht(m.price))
+    .filter((n): n is number => n !== null);
+  return {
+    baht: prices.reduce((sum, n) => sum + n, 0),
+    uncounted: approved.length - prices.length,
+  };
+}
+
+/**
+ * รวมแผนอื่นในปีการศึกษาเดียวกันให้เป็น AnnualMediaContext
+ * ผู้เรียกต้องกรองมาแล้วว่าเป็น "นักเรียนคนเดียวกัน + ปีเดียวกัน + ไม่ใช่แผนนี้"
+ */
+export function buildAnnualContext(
+  otherPlansSameYear: { media: PricedMedia[] }[]
+): AnnualMediaContext {
+  let baht = 0;
+  let uncounted = 0;
+  for (const p of otherPlansSameYear) {
+    const s = sumApprovedMedia(p.media);
+    baht += s.baht;
+    uncounted += s.uncounted;
+  }
+  return {
+    otherPlansApprovedBaht: baht,
+    otherPlanCount: otherPlansSameYear.length,
+    otherUncounted: uncounted,
+  };
+}
+
+/**
+ * จัดกลุ่มแผนที่โหลดมาแล้ว → AnnualMediaContext ของแต่ละแผน (คีย์ = plan.id)
+ *
+ * ใช้ใน GET /api/plans ซึ่งโหลดแผนทั้งหมดพร้อม media มาแล้ว จึงคิดยอดทั้งปี
+ * ได้ในหน่วยความจำ ไม่ต้อง query เพิ่มต่อแผน (ถ้า query ในลูป = N+1)
+ *
+ * จับคู่ด้วย studentId + academicYear — คนละนักเรียนหรือคนละปีจะไม่ถูกรวมกัน
+ * แยกเป็นฟังก์ชัน pure เพื่อให้ test-warnings.mjs พิสูจน์ข้อนั้นได้โดยไม่ต้องมี DB
+ */
+export function buildAnnualContextsByPlan<
+  T extends { id: string; studentId: string; academicYear: string; media: PricedMedia[] }
+>(plans: T[]): Map<string, AnnualMediaContext> {
+  const key = (p: T) => `${p.studentId}::${p.academicYear}`;
+
+  const groups = new Map<string, T[]>();
+  for (const p of plans) {
+    const group = groups.get(key(p));
+    if (group) group.push(p);
+    else groups.set(key(p), [p]);
+  }
+
+  return new Map(
+    plans.map((p) => [
+      p.id,
+      buildAnnualContext((groups.get(key(p)) ?? []).filter((o) => o.id !== p.id)),
+    ])
+  );
+}
 
 const goalPreview = (g: GoalRecord) => g.finalText.slice(0, 30);
 
@@ -139,32 +239,47 @@ function checkYearMismatch(goals: GoalRecord[], academicYear: string): string[] 
 }
 
 /**
- * กฎ 1.5 (ร้ายแรงรองจากปีผิด): ยอดรวมสื่อที่อนุมัติ เกินเพดาน 2,000 บาท/คน/ปี
+ * กฎ 1.5 (ร้ายแรงรองจากปีผิด): ยอดสื่อที่อนุมัติ "รวมทั้งปีการศึกษา" เกิน 2,000 บาท/คน/ปี
  *
  * อยู่สูงเพราะเป็น "กฎแข็ง" ของระบบต้นทาง ไม่ใช่ดุลยพินิจ — ยอดเกินแล้วระบบ
  * IEP Online เตือนและเบิกไม่ผ่าน ครูต้องรู้ก่อนพิมพ์เอกสารให้คณะกรรมการเซ็น
  *
+ * ⚠️ นับรวมทุกแผนของนักเรียนคนนี้ในปีการศึกษาเดียวกัน ไม่ใช่แค่แผนนี้แผนเดียว
+ *    (ดูเหตุผลที่ MEDIA_BUDGET_CAP_BAHT) ยอดของแผนอื่นมาทาง annual ซึ่ง route
+ *    เป็นคนหามาให้ ค่าเริ่มต้นคือ 0 = ไม่มีแผนอื่น
+ *
  * แต่ยังใช้โทนคำถามตาม CLAUDE.md §4 — ระบบไม่ตัดรายการให้เอง
  * เพราะ "ตัดอันไหนออก" เป็นการตัดสินใจเชิงวิชาชีพของครู ไม่ใช่ของระบบ
+ * และคณะกรรมการยกเว้นเพดานได้ จึงเป็น warning ไม่ใช่ block
  *
  * รายการที่ price = null ไม่นับเข้ายอด (บัญชี ก / ขอยืม = ไม่ได้ขอเงินอุดหนุน)
  * แต่บอกจำนวนไว้ในข้อความ ครูจะได้รู้ว่ายอดนี้ยังไม่ครบทุกรายการ
  */
-function checkMediaBudgetCap(media: MediaRecord[]): string[] {
-  const approved = media.filter((m) => m.isApproved);
-  const prices = approved
-    .map((m) => parsePriceBaht(m.price))
-    .filter((n): n is number => n !== null);
-
-  const total = prices.reduce((sum, n) => sum + n, 0);
+function checkMediaBudgetCap(
+  media: MediaRecord[],
+  annual: AnnualMediaContext
+): string[] {
+  const here = sumApprovedMedia(media);
+  const total = here.baht + annual.otherPlansApprovedBaht;
   if (total <= MEDIA_BUDGET_CAP_BAHT) return [];
 
-  const uncounted = approved.length - prices.length;
+  const uncounted = here.uncounted + annual.otherUncounted;
   const note =
     uncounted > 0 ? ` (ยังไม่รวมอีก ${uncounted} รายการที่ไม่มีราคา เช่น บัญชี ก / ขอยืม)` : "";
 
+  // มีแผนอื่นในปีเดียวกัน → บอกที่มาของยอดให้ครูตรวจได้ว่ามาจากไหนบ้าง
+  const scope =
+    annual.otherPlanCount > 0
+      ? `รวมราคาสื่อที่อนุมัติแล้วทั้งปีการศึกษา ${formatBaht(total)} บาท ` +
+        `(แผนนี้ ${formatBaht(here.baht)} บาท + อีก ${annual.otherPlanCount} แผนในปีเดียวกัน ` +
+        `${formatBaht(annual.otherPlansApprovedBaht)} บาท)`
+      : `รวมราคาสื่อที่อนุมัติแล้ว ${formatBaht(total)} บาท`;
+
   return [
-    `รวมราคาสื่อที่อนุมัติแล้ว ${formatBaht(total)} บาท เกินเพดาน ${formatBaht(MEDIA_BUDGET_CAP_BAHT)} บาท/คน/ปี ของระบบ IEP Online อยู่ ${formatBaht(total - MEDIA_BUDGET_CAP_BAHT)} บาท${note} — ตัดรายการออก หรือเปลี่ยนบางรายการเป็นขอยืมก่อนสรุปแผนไหม?`,
+    `${scope} เกินเพดาน ${formatBaht(MEDIA_BUDGET_CAP_BAHT)} บาท/คน/ปี ของระบบ IEP Online ` +
+      `อยู่ ${formatBaht(total - MEDIA_BUDGET_CAP_BAHT)} บาท${note} — ` +
+      `เพดานนี้นับรวมทั้งปีการศึกษา ไม่ใช่ต่อแผน (คณะกรรมการพิจารณายกเว้นได้) ` +
+      `ตัดรายการออก หรือเปลี่ยนบางรายการเป็นขอยืมก่อนสรุปแผนไหม?`,
   ];
 }
 
@@ -261,13 +376,17 @@ function checkMeasurableCriterion(goals: GoalRecord[]): string[] {
 /**
  * รวม warning ทุกกฎ เรียงจากร้ายแรงสุด → เบาสุด (ครูอ่านจากบนลงล่าง)
  * export ไว้ให้ scripts/test-warnings.mjs ทดสอบตรงได้โดยไม่ต้องเปิด server
+ *
+ * annual = ยอดสื่อของแผนอื่นในปีการศึกษาเดียวกัน (route เป็นคนหามาให้)
+ * ไม่ส่งมา = ไม่มีแผนอื่น → ผลลัพธ์เท่าเดิมทุกประการ
  */
 export function buildConsistencyWarnings(
-  plan: Pick<PlanWithRelations, "academicYear" | "goals" | "media">
+  plan: Pick<PlanWithRelations, "academicYear" | "goals" | "media">,
+  annual: AnnualMediaContext = EMPTY_ANNUAL
 ): string[] {
   return [
     ...checkYearMismatch(plan.goals, plan.academicYear),
-    ...checkMediaBudgetCap(plan.media),
+    ...checkMediaBudgetCap(plan.media, annual),
     ...checkApprovedMediaReason(plan.media),
     ...checkMediaCode(plan.media),
     ...checkChildNameInGoals(plan.goals),
@@ -278,8 +397,11 @@ export function buildConsistencyWarnings(
   ];
 }
 
-export function toPlanDTO(plan: PlanWithRelations): PlanDTO {
-  const warnings = buildConsistencyWarnings(plan);
+export function toPlanDTO(
+  plan: PlanWithRelations,
+  annual: AnnualMediaContext = EMPTY_ANNUAL
+): PlanDTO {
+  const warnings = buildConsistencyWarnings(plan, annual);
 
   const durationSeconds = plan.finalizedAt
     ? Math.round((plan.finalizedAt.getTime() - plan.createdAt.getTime()) / 1000)

@@ -22,7 +22,8 @@ import {
 } from "@/lib/curriculum-retrieval";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/prompts";
 import { buildLLMSafePayload, assertNoPII } from "@/lib/pii-guard";
-import { toPlanDTO } from "@/lib/serializers";
+import { buildAnnualContextsByPlan, toPlanDTO } from "@/lib/serializers";
+import { fetchAnnualMediaContext } from "@/lib/plan-queries";
 import type { CreatePlanRequest, IndicatorEntry, LLMOutput, MediaEntry } from "@/lib/types";
 
 /** mock output สำหรับพัฒนา UI โดยไม่ต้องมี API key */
@@ -259,7 +260,14 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(toPlanDTO(plan), { status: 201 });
+    // แผนที่เพิ่งสร้างอาจไม่ใช่แผนแรกของปี — ยอดต้องรวมแผนอื่นในปีเดียวกันด้วย
+    const annual = await fetchAnnualMediaContext({
+      studentId: plan.studentId,
+      academicYear: plan.academicYear,
+      excludePlanId: plan.id,
+    });
+
+    return NextResponse.json(toPlanDTO(plan, annual), { status: 201 });
   } catch (err) {
     console.error("POST /api/plans failed:", err);
     return NextResponse.json({ error: "สร้างแผนไม่สำเร็จ" }, { status: 500 });
@@ -282,7 +290,15 @@ export async function GET(request: Request) {
       },
     });
 
-    return NextResponse.json(plans.map(toPlanDTO));
+    // เพดานเงินอุดหนุนนับรวมทั้งปีการศึกษา ไม่ใช่ต่อแผน (ดู lib/serializers.ts)
+    // query ข้างบนโหลดแผน "ทั้งหมด" ที่เข้าเงื่อนไขพร้อม media มาแล้ว จึงคิดยอด
+    // ในหน่วยความจำได้ครบ ไม่ต้อง query เพิ่มต่อแผน (ถ้า query ในลูปจะกลายเป็น N+1)
+    const annualByPlan = buildAnnualContextsByPlan(plans);
+
+    return NextResponse.json(
+      // ⚠️ ห้ามเขียน plans.map(toPlanDTO) — map จะส่ง index เป็นอาร์กิวเมนต์ที่ 2
+      plans.map((p) => toPlanDTO(p, annualByPlan.get(p.id)))
+    );
   } catch (err) {
     console.error("GET /api/plans failed:", err);
     return NextResponse.json({ error: "ดึงข้อมูลแผนไม่สำเร็จ" }, { status: 500 });
