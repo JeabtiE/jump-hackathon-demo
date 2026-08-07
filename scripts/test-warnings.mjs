@@ -14,6 +14,10 @@ import {
   hasMeasurableNumber,
   findChildNamePrefix,
   parsePriceBaht,
+  buildAnnualContext,
+  buildAnnualContextsByPlan,
+  sumApprovedMedia,
+  EMPTY_ANNUAL,
 } from "../lib/serializers.ts";
 
 let passed = 0;
@@ -232,6 +236,162 @@ check(
     w.trim().endsWith("ไหม?")
   ),
   true
+);
+
+// ═════════ กฎ 1.5 (ต่อ): เพดานนับรวม "ทั้งปีการศึกษา" ไม่ใช่ต่อแผน ═════════
+//
+// ระเบียบ: "แต่ละรายมีวงเงินไม่เกิน ๒,๐๐๐ บาทต่อปี" — หน่วยคือคน/ปี ไม่ใช่คน/แผน
+// นักเรียนคนเดียวมีได้หลายแผนในปีเดียวกัน (ภาคเรียน 1 และ 2) ยอดต้องรวมข้ามแผน
+//
+// ยอดของ "แผนอื่น" มาทาง AnnualMediaContext ซึ่ง route เป็นคนหามาให้
+// (ดู lib/plan-queries.ts) ไม่ส่งมา = ไม่มีแผนอื่น → ผลเท่าเดิม
+
+console.log("\n── กฎ 1.5 (ต่อ): เพดานนับรวมทั้งปีการศึกษา ──");
+
+/** จำลองแผนอื่นในปีเดียวกันให้ buildAnnualContext */
+const otherPlans = (...planPrices) =>
+  buildAnnualContext(planPrices.map((prices) => ({ media: pricedMedia(prices) })));
+
+const warnWithAnnual = (plan, annual) =>
+  buildConsistencyWarnings(plan, annual).some((w) => w.includes(CAP_MSG));
+
+// ── เคสหลักของ task นี้: สองแผนปีเดียวกัน แต่ละแผนไม่เกิน รวมแล้วเกิน ──
+check(
+  "แผนนี้ 1,500 + อีกแผนปีเดียวกัน 1,500 = 3,000 → fire (พิสูจน์ว่าการแก้มีผลจริง)",
+  warnWithAnnual(
+    makePlan({ media: pricedMedia(["1,500 บาท"]) }),
+    otherPlans(["1,500 บาท"])
+  ),
+  true
+);
+check(
+  "แผนนี้ 1,500 แผนเดียว (ไม่มีแผนอื่น) → ไม่ fire — เคสเดียวกันแต่ไม่มียอดสะสม",
+  hasWarn(makePlan({ media: pricedMedia(["1,500 บาท"]) }), CAP_MSG),
+  false
+);
+
+// ── ข้อความต้องบอกที่มาของยอด ครูจะได้ตรวจได้ว่ามาจากแผนไหนบ้าง ──
+check(
+  "ข้อความบอกยอดรวมทั้งปี + แยกว่าเป็นของแผนนี้เท่าไร ของอีกกี่แผนเท่าไร",
+  buildConsistencyWarnings(
+    makePlan({ media: pricedMedia(["1,500 บาท"]) }),
+    otherPlans(["1,500 บาท"])
+  ).some(
+    (w) =>
+      w.includes("ทั้งปีการศึกษา 3,000 บาท") &&
+      w.includes("แผนนี้ 1,500 บาท") &&
+      w.includes("อีก 1 แผนในปีเดียวกัน 1,500 บาท")
+  ),
+  true
+);
+check(
+  "ไม่มีแผนอื่น → ข้อความไม่พูดถึง \"แผนนี้ ... + อีก N แผน\"",
+  warningsOf(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท"]) })).some((w) =>
+    w.includes("อีก 1 แผนในปีเดียวกัน")
+  ),
+  false
+);
+
+// ── ขอบเขต: รวมพอดี 2,000 ข้ามแผน ยังไม่ fire (เท่ากับกฎเดิม) ──
+check(
+  "แผนนี้ 1,250 + อีกแผน 750 = 2,000 พอดี → ไม่ fire",
+  warnWithAnnual(
+    makePlan({ media: pricedMedia(["1,250 บาท/ชุด"]) }),
+    otherPlans(["750 บาท"])
+  ),
+  false
+);
+check(
+  "แผนนี้ 1,250 + อีกแผน 751 = 2,001 → fire",
+  warnWithAnnual(
+    makePlan({ media: pricedMedia(["1,250 บาท/ชุด"]) }),
+    otherPlans(["751 บาท"])
+  ),
+  true
+);
+
+// ── หลายแผนในปีเดียวกัน ──
+check(
+  "แผนนี้ 800 + อีก 2 แผน (700 + 700) = 2,200 → fire และนับครบทั้ง 2 แผน",
+  buildConsistencyWarnings(
+    makePlan({ media: pricedMedia(["800 บาท"]) }),
+    otherPlans(["700 บาท"], ["700 บาท"])
+  ).some((w) => w.includes("ทั้งปีการศึกษา 2,200 บาท") && w.includes("อีก 2 แผนในปีเดียวกัน")),
+  true
+);
+
+// ── กฎเดิมยังต้องทำงานเหมือนเดิมเมื่อรวมยอดข้ามแผน ──
+check(
+  "แผนอื่นที่ isApproved = false ไม่นับเข้ายอดทั้งปี",
+  warnWithAnnual(
+    makePlan({ media: pricedMedia(["1,500 บาท"]) }),
+    buildAnnualContext([
+      { media: pricedMedia(["1,500 บาท"], { isApproved: false }) },
+    ])
+  ),
+  false
+);
+check(
+  "แผนอื่นที่ price = null ไม่นับเข้ายอด แต่ไปเพิ่มจำนวน \"ยังไม่รวม\"",
+  buildConsistencyWarnings(
+    makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท"]) }),
+    otherPlans([null])
+  ).some((w) => w.includes("ยังไม่รวมอีก 1 รายการที่ไม่มีราคา")),
+  true
+);
+
+// ── ปีการศึกษา / นักเรียน ต่างกันต้องไม่ถูกรวม ──
+// นี่คือการจัดกลุ่มจริงที่ GET /api/plans ใช้ (buildAnnualContextsByPlan)
+// ไม่ใช่แค่สัญญาว่า "ถ้ากรองมาแล้วจะไม่รวม" — เทสต์ป้อนแผนหลายปี/หลายคนเข้าไปตรง ๆ
+const planRow = (id, studentId, academicYear, prices) => ({
+  id,
+  studentId,
+  academicYear,
+  media: pricedMedia(prices),
+});
+
+const grouped = buildAnnualContextsByPlan([
+  planRow("p1", "s1", "2569", ["1,500 บาท"]),
+  planRow("p2", "s1", "2569", ["1,500 บาท"]), // คนเดียวกัน ปีเดียวกัน → ต้องรวมกัน
+  planRow("p3", "s1", "2570", ["1,900 บาท"]), // คนเดียวกัน คนละปี   → ต้องไม่ถูกรวม
+  planRow("p4", "s2", "2569", ["1,900 บาท"]), // คนละคน ปีเดียวกัน   → ต้องไม่ถูกรวม
+]);
+
+check(
+  "จัดกลุ่มจริง: p1 เห็นเฉพาะ p2 (คนเดียวกัน ปีเดียวกัน) = 1,500 บาท 1 แผน",
+  grouped.get("p1"),
+  { otherPlansApprovedBaht: 1500, otherPlanCount: 1, otherUncounted: 0 }
+);
+check(
+  "จัดกลุ่มจริง: p3 คนละปี → ไม่เห็นแผนปี 2569 เลย (ยอดเป็น 0)",
+  grouped.get("p3"),
+  EMPTY_ANNUAL
+);
+check(
+  "จัดกลุ่มจริง: p4 คนละนักเรียน → ไม่เห็นแผนของ s1 เลย (ยอดเป็น 0)",
+  grouped.get("p4"),
+  EMPTY_ANNUAL
+);
+check(
+  "จัดกลุ่มจริง: p3 (1,900 เดี่ยว ๆ) ไม่ fire — พิสูจน์ว่าปี 2569 ไม่รั่วมารวม",
+  warnWithAnnual(
+    makePlan({ academicYear: "2570", media: pricedMedia(["1,900 บาท"]) }),
+    grouped.get("p3")
+  ),
+  false
+);
+check(
+  "buildAnnualContext ของลิสต์ว่าง = EMPTY_ANNUAL (ผลเท่ากับไม่ส่งอาร์กิวเมนต์)",
+  buildAnnualContext([]),
+  EMPTY_ANNUAL
+);
+check(
+  "sumApprovedMedia: นับเฉพาะที่อนุมัติ + แยกจำนวนที่ไม่มีราคา",
+  sumApprovedMedia([
+    ...pricedMedia(["1,000 บาท", null]),
+    makeMedia({ id: "mx", price: "500 บาท", isApproved: false }),
+  ]),
+  { baht: 1000, uncounted: 1 }
 );
 
 // ═════════ กฎ 2: อนุมัติสื่อแล้วแต่เหตุผลว่าง ═════════
