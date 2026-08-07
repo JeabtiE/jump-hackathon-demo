@@ -13,6 +13,7 @@ import {
   findMismatchedYears,
   hasMeasurableNumber,
   findChildNamePrefix,
+  parsePriceBaht,
 } from "../lib/serializers.ts";
 
 let passed = 0;
@@ -127,6 +128,110 @@ check(
   "แผน: academicYear ไม่ใช่ตัวเลข → ข้ามกฎ ไม่ crash",
   warningsOf(makePlan({ academicYear: "ไม่ระบุ" })),
   []
+);
+
+// ═════════ กฎ 1.5: ยอดรวมสื่อเกินเพดาน 2,000 บาท ═════════
+
+console.log("\n── กฎ 1.5: ยอดรวมสื่อเกินเพดาน 2,000 บาท ──");
+
+const CAP_MSG = "เกินเพดาน";
+
+/** สร้างสื่อ n รายการ ราคาเท่ากันหมด — ใช้ประกอบยอดรวมให้ตรงเป๊ะ */
+const pricedMedia = (prices, overrides = {}) =>
+  prices.map((p, i) => makeMedia({ id: `m${i + 1}`, price: p, ...overrides }));
+
+// ── parsePriceBaht: อ่านราคาจาก string ของคู่มือ ──
+check("parsePriceBaht: \"250 บาท\" → 250", parsePriceBaht("250 บาท"), 250);
+check("parsePriceBaht: \"1,250 บาท/ชุด\" → 1250 (ตัด comma)", parsePriceBaht("1,250 บาท/ชุด"), 1250);
+check("parsePriceBaht: \"110 บาท / เล่ม\" → 110", parsePriceBaht("110 บาท / เล่ม"), 110);
+check("parsePriceBaht: null → null", parsePriceBaht(null), null);
+check("parsePriceBaht: อ่านไม่ออก → null", parsePriceBaht("ตามจริง"), null);
+check(
+  "parsePriceBaht: หน่วยมีตัวเลขปน \"23 บาท/12 แท่ง\" → 23 ไม่ใช่ 12",
+  parsePriceBaht("23 บาท/12 แท่ง"),
+  23
+);
+
+// ── เคสที่ต้อง fire ──
+check(
+  "ยอดรวม 2,050 > 2,000 → fire",
+  hasWarn(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท"]) }), CAP_MSG),
+  true
+);
+check(
+  "ข้อความบอกยอดรวม + ส่วนที่เกิน",
+  warningsOf(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท"]) })).some(
+    (w) => w.includes("2,050 บาท") && w.includes("อยู่ 50 บาท")
+  ),
+  true
+);
+
+// ── เคสที่ห้าม fire (ขอบเขตพอดี) ──
+check(
+  "ยอดรวม 2,000 พอดี → ไม่ fire (แผนจริงทั้ง 2 ฉบับขอพอดีเพดาน)",
+  hasWarn(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "750 บาท / ชุด"]) }), CAP_MSG),
+  false
+);
+check(
+  "ยอดรวม 1,999 < 2,000 → ไม่ fire",
+  hasWarn(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "749 บาท"]) }), CAP_MSG),
+  false
+);
+
+// ── null price ไม่นับเข้ายอด ──
+check(
+  "price = null ไม่นับเข้ายอด (2,000 + null = ไม่เกิน)",
+  hasWarn(
+    makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "750 บาท", null]) }),
+    CAP_MSG
+  ),
+  false
+);
+check(
+  "ผสม null/ไม่ null: เฉพาะที่มีราคารวมแล้วเกิน → fire",
+  hasWarn(
+    makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท", null]) }),
+    CAP_MSG
+  ),
+  true
+);
+check(
+  "มี null ปนแล้ว fire → ข้อความบอกจำนวนรายการที่ไม่ได้นับ",
+  warningsOf(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท", null]) })).some((w) =>
+    w.includes("ยังไม่รวมอีก 1 รายการที่ไม่มีราคา")
+  ),
+  true
+);
+check(
+  "ไม่มี null เลย → ข้อความไม่มีวงเล็บ \"ยังไม่รวม\"",
+  warningsOf(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท"]) })).some((w) =>
+    w.includes("ยังไม่รวมอีก")
+  ),
+  false
+);
+
+// ── isApproved = false ไม่นับเข้ายอด ──
+check(
+  "รายการที่ไม่ได้อนุมัติ ไม่นับเข้ายอด (ครูตัดออกแล้ว = ไม่ได้ขอเบิก)",
+  hasWarn(
+    makePlan({
+      media: [
+        ...pricedMedia(["1,250 บาท/ชุด", "750 บาท"]),
+        makeMedia({ id: "m3", price: "2,000 บาท", isApproved: false }),
+      ],
+    }),
+    CAP_MSG
+  ),
+  false
+);
+
+// ── โทนคำถาม ไม่ใช่โทนกล่าวหา (CLAUDE.md §4) ──
+check(
+  "ใช้โทนคำถาม ลงท้ายด้วย \"ไหม?\" ไม่ใช่คำสั่ง",
+  warningsOf(makePlan({ media: pricedMedia(["1,250 บาท/ชุด", "800 บาท"]) })).some((w) =>
+    w.trim().endsWith("ไหม?")
+  ),
+  true
 );
 
 // ═════════ กฎ 2: อนุมัติสื่อแล้วแต่เหตุผลว่าง ═════════
@@ -309,6 +414,37 @@ check("เรียง: ปีผิด > เหตุผลว่าง > ช�
   "เหตุผลว่าง",
   "ชื่อเด็ก",
   "เกณฑ์ไม่มีเลข",
+]);
+
+// กฎ 1.5 เป็นกฎแข็งจากระบบต้นทาง (เบิกไม่ผ่าน) จึงต้องอยู่สูง — รองจากปีผิดเท่านั้น
+const overBudgetMessy = makePlan({
+  goals: [
+    makeGoal({
+      finalText: "เด็กชายทดสอบ ระบบ ทำกิจกรรมได้ดีขึ้น",
+      timeframe: "ภายในวันที่ 31 มีนาคม 2555",
+    }),
+  ],
+  media: [
+    makeMedia({ id: "m1", price: "1,250 บาท/ชุด" }),
+    makeMedia({ id: "m2", price: "800 บาท", finalReason: "" }),
+  ],
+});
+const budgetOrder = warningsOf(overBudgetMessy).map((w) =>
+  w.includes("ไม่ตรงกับปีการศึกษา")
+    ? "ปีผิด"
+    : w.includes("เกินเพดาน")
+      ? "งบเกิน"
+      : w.includes("เหตุผลและความจำเป็น")
+        ? "เหตุผลว่าง"
+        : w.includes("คำนำหน้าชื่อเด็ก")
+          ? "ชื่อเด็ก"
+          : "อื่นๆ"
+);
+check("เรียง: ปีผิด > งบเกิน > เหตุผลว่าง > ชื่อเด็ก", budgetOrder, [
+  "ปีผิด",
+  "งบเกิน",
+  "เหตุผลว่าง",
+  "ชื่อเด็ก",
 ]);
 
 // ═════════ สรุป ═════════
