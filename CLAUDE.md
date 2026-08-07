@@ -108,17 +108,19 @@ data/mappingTable.json      (what retrieval actually serves)
    ↓ scripts/validate_media_catalog.mjs ← npm run validate:media
 ```
 
-`fix_media_catalog.mjs` exists because `pdfs/3.txt` is **not committed** — it is the extracted text of the official manual and stays out of the repo, so a fresh clone cannot run `parse_catalog.py`. Both carry the same price/disability-type logic — **change one, change the other.**
+**`fix_media_catalog.mjs` is permanent — do not delete it.** `pdfs/3.txt` is the extracted text of the official manual and is **deliberately not committed** (`.gitignore`), so a fresh clone has no way to run `parse_catalog.py`. The .mjs is therefore the only path that can rebuild `data/mediaCatalog2568.json` from what is actually in the repo, and it stays for that reason regardless of whether someone has the source txt locally.
 
-As of 7 Aug 2569 the two are verified to produce **byte-identical** output. To re-check after editing either: put the source txt at `pdfs/3.txt`, then
+> An earlier version of this note said to delete the .mjs "once the source txt resurfaces, so there is one source again". The txt did resurface (7 Aug 2569) and that instruction was **retired** — acting on it would leave a clone unable to rebuild the catalog. The two-generator setup is the accepted cost of keeping the source document out of the repo.
+
+Both carry the same price/disability-type logic — **change one, change the other.** As of 7 Aug 2569 they are verified to produce **byte-identical** output. To re-check after editing either, put the source txt at `pdfs/3.txt` and run:
 
 ```bash
-python scripts/parse_catalog.py pdfs/3.txt   # writes data/mediaCatalog2568.json directly
+python scripts/parse_catalog.py            # default path is pdfs/3.txt; writes data/ directly
 cp data/mediaCatalog2568.json /tmp/py.json
 npm run fix:media && diff /tmp/py.json data/mediaCatalog2568.json   # must be empty
 ```
 
-`fix:media` being a **no-op** on freshly-parsed output is the check that the two have not drifted. (On Windows, run Python with `PYTHONIOENCODING=utf-8` or the Thai summary crashes on cp1252.) Keep the .mjs as long as the source txt stays uncommitted — the earlier note here said to delete it once the txt resurfaced, but that would leave a clone with no way to rebuild the catalog.
+`fix:media` being a **no-op** on freshly-parsed output is the check that the two have not drifted. (On Windows, run Python with `PYTHONIOENCODING=utf-8` or the Thai summary crashes on cp1252.)
 
 Two extraction bugs that repeat, because the PDF causes both:
 - **Word-wrap splits Thai keywords mid-word** (`"บกพร่อง ทางสติปัญญา"`), so literal substring matching silently drops disability types. Always squash whitespace on *both* sides before comparing. This is what left `BE17103` mapped to `autism` only when real plans use it for `intellectual`.
