@@ -32,6 +32,10 @@ yarn-error.log*
 # ไฟล์ .docx จาก test:api
 /scripts/output/
 
+# ⚠️ ต้นฉบับคู่มือฯ 2568 ที่สกัดจาก PDF — ไม่ commit (ไฟล์ใหญ่ + เป็นเอกสารต้นฉบับ)
+# ใช้รัน scripts/parse_catalog.py เท่านั้น ผลลัพธ์คือ data/mediaCatalog2568.json ที่ commit แทน
+/pdfs/
+
 # vercel
 .vercel
 
