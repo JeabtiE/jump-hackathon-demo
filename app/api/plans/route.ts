@@ -45,10 +45,15 @@ function buildMockOutput(media: MediaEntry[], indicators: IndicatorEntry[]): LLM
         indicatorCodes: [],
       },
     ],
-    mediaRecommendations: media.map((m) => ({
+    // ตั้งใจเลือกแค่ครึ่งเดียว (อย่างน้อย 1 รายการถ้ามีสื่อเลย) — ของจริง LLM ก็เลือกไม่ครบ
+    // คน B ต้องเห็นเคส "มีรายการที่ isApproved = false ปนอยู่ในแผน" ตั้งแต่ตอนพัฒนา UI
+    // ไม่งั้นจะสร้าง UI จากเคสที่ไม่มีวันเกิดจริง (เหมือนเหตุผลของ indicatorCodes: [] ข้างบน)
+    mediaRecommendations: media.slice(0, Math.max(1, Math.ceil(media.length / 2))).map((m, i) => ({
       code: m.code,
       item: m.item,
       category: m.category,
+      // เว้น goalRef ของรายการที่ 2 เป็นต้นไป — สื่อที่ผูกเป้าหมายไม่ได้เป็นเรื่องปกติในแผนจริง
+      goalRef: i === 0 ? "goal_1" : undefined,
       reason: `[MOCK] ${m.rationale}`,
     })),
   };
@@ -59,30 +64,63 @@ function buildMockOutput(media: MediaEntry[], indicators: IndicatorEntry[]): LLM
  *
  * 🔑 รหัส/ชื่อ/บัญชี/ราคา/วิธีการ ยึดจาก mappingTable เท่านั้น — จาก LLM เอาแค่ "เหตุผล"
  *    รายการที่จับคู่ไม่ได้ถูกทิ้ง เพื่อไม่ให้สื่อที่เบิกไม่ได้หลุดเข้าเอกสาร
+ *
+ * 🔑 GOAL-AWARE (8 ส.ค. 2569): LLM เลือก "บางรายการ" ที่ตรงกับเป้าหมายในแผนนี้
+ *    แต่ระบบยังบันทึก **ทุกรายการที่เบิกได้** ลงแผน ต่างกันแค่ค่า isApproved
+ *      - LLM เลือก      → isApproved = true  + เหตุผลจาก LLM
+ *      - LLM ไม่ได้เลือก → isApproved = false + เหตุผลว่าง (ครูติ๊กกลับเองได้)
+ *
+ *    ที่ไม่ทิ้งรายการที่ไม่ได้เลือก เพราะแผนจริงชี้ว่าครูเติมรายการจนเกือบเต็มวงเงิน
+ *    2,000 บาทเสมอ (data/goalMediaPairs.json _keyFindings ข้อ 5) การตัดตัวเลือกทิ้ง
+ *    จึงเท่ากับตัดสินใจแทนครูในเรื่องที่ครูตั้งใจใช้สิทธิ์ให้เต็ม
  */
 function resolveMediaRecommendations(
   llmMedia: LLMOutput["mediaRecommendations"],
   retrievedMedia: MediaEntry[]
-) {
+): { entry: MediaEntry; reason: string; isApproved: boolean }[] {
   const byCode = new Map(retrievedMedia.map((m) => [m.code, m]));
   const byItem = new Map(retrievedMedia.map((m) => [m.item.trim(), m]));
 
-  const resolved: { entry: MediaEntry; reason: string }[] = [];
-  const used = new Set<string>();
+  const reasonByCode = new Map<string, string>();
 
-  for (const rec of llmMedia) {
+  for (const rec of llmMedia ?? []) {
     // จับคู่ด้วยรหัสก่อน (แม่นกว่า) ค่อย fallback เป็นชื่อ เผื่อ LLM ตกช่อง code
     const entry = (rec.code && byCode.get(rec.code.trim())) || byItem.get(rec.item?.trim() ?? "");
     if (!entry) {
       console.warn("ทิ้งรายการสื่อที่ไม่อยู่ใน retrieval:", rec.code ?? rec.item);
       continue;
     }
-    if (used.has(entry.code)) continue;
-    used.add(entry.code);
-    resolved.push({ entry, reason: rec.reason });
+    if (reasonByCode.has(entry.code)) continue;
+    reasonByCode.set(entry.code, rec.reason ?? "");
   }
 
-  return resolved;
+  // LLM ไม่ได้เลือกอะไรเลย (parse เพี้ยน / เลือกแคบเกินจนว่าง) → กลับไปพฤติกรรมเดิม
+  // คืออนุมัติทุกรายการที่เบิกได้ ดีกว่าส่งแผนที่ส่วนที่ 6 ว่างเปล่าให้ครู
+  if (reasonByCode.size === 0) {
+    return retrievedMedia.map((entry) => ({
+      entry,
+      reason: entry.rationale,
+      isApproved: true,
+    }));
+  }
+
+  // เรียงรายการที่ LLM เลือกไว้ก่อน ครูจะได้เห็นสิ่งที่ตรงเป้าหมายที่สุดบนสุด
+  const picked = retrievedMedia.filter((m) => reasonByCode.has(m.code));
+  const rest = retrievedMedia.filter((m) => !reasonByCode.has(m.code));
+
+  return [
+    ...picked.map((entry) => ({
+      entry,
+      reason: reasonByCode.get(entry.code) ?? "",
+      isApproved: true,
+    })),
+    // เหตุผลเว้นว่างไว้ตั้งใจ ไม่ใส่ rationale ของเราแทน เพราะ:
+    //   1. ถ้าครูติ๊กกลับ กฎ checkApprovedMediaReason จะเตือนให้เขียนเหตุผลเอง ซึ่งถูกต้อง
+    //      (แบบฟอร์มขอรับเงินอุดหนุนต้องมีเหตุผลทุกรายการ)
+    //   2. aiReason ต้องหมายถึง "ข้อความที่ AI เขียนจริง" เท่านั้น ไม่งั้น mediaEditRate
+    //      ใน /api/stats จะนับข้อความที่ AI ไม่ได้เขียนเข้าไปด้วย
+    ...rest.map((entry) => ({ entry, reason: "", isApproved: false })),
+  ];
 }
 
 async function callLLM(params: {
@@ -241,7 +279,7 @@ export async function POST(request: Request) {
         },
         media: {
           create: resolveMediaRecommendations(llm.mediaRecommendations, retrievedMedia).map(
-            ({ entry, reason }) => ({
+            ({ entry, reason, isApproved }) => ({
               code: entry.code,
               item: entry.item,
               category: entry.category,
@@ -249,6 +287,7 @@ export async function POST(request: Request) {
               mode: entry.mode,
               aiReason: reason,
               finalReason: reason,
+              isApproved,
             })
           ),
         },
