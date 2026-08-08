@@ -24,6 +24,7 @@ import {
   TableRow,
   TableCell,
   WidthType,
+  PageOrientation,
 } from "docx";
 import { prisma } from "@/lib/db";
 import { lookupIndicators } from "@/lib/curriculum-retrieval";
@@ -43,6 +44,19 @@ const DISABILITY_LABEL: Record<string, string> = {
 
 const FONT = "TH Sarabun New";
 const BLANK = "..............................";
+
+/**
+ * ขนาด A4 หน่วย twips — เป็น "ฐานแนวตั้ง" เสมอ
+ *
+ * ⚠️ ห้ามสลับ width/height เองเมื่อจะทำหน้าแนวนอน
+ *    PageSize ของ docx สลับให้อัตโนมัติแล้วเมื่อ orientation = LANDSCAPE
+ *    (node_modules/docx/build/index.mjs → `const flip = orientation === LANDSCAPE`)
+ *    ถ้าสลับเองด้วยจะกลายเป็นสลับสองรอบ = ได้ขนาดแนวตั้งกลับมา
+ *    แต่ติดแท็ก orient="landscape" ไว้ → Word/LibreOffice เรนเดอร์ผิดแบบเงียบๆ
+ */
+const A4 = { width: 11906, height: 16838 };
+const PORTRAIT_PAGE = { page: { size: { ...A4, orientation: PageOrientation.PORTRAIT } } };
+const LANDSCAPE_PAGE = { page: { size: { ...A4, orientation: PageOrientation.LANDSCAPE } } };
 
 /** แสดงค่าถ้ามี ไม่มีก็เว้นบรรทัดให้กรอกมือ */
 function val(v?: string | null): string {
@@ -186,10 +200,18 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const approvedMedia = plan.media.filter((m) => m.isApproved);
     const abilityLevels = (plan.assessment.abilityLevels as Record<string, string>) ?? {};
 
+    /**
+     * เอกสารจริงแบ่งเป็น 3 ส่วนที่วางหน้ากระดาษต่างกัน
+     * (ยืนยันจาก sectPr ในไฟล์ .docx ของแผนจริง)
+     *   A แนวตั้ง  — หัวเอกสาร + ส่วนที่ 1-4
+     *   B แนวนอน  — ส่วนที่ 5-6 สองตารางที่กว้างที่สุดในเอกสาร
+     *   C แนวตั้ง  — ส่วนที่ 7-8 ลายเซ็นกรรมการและความเห็นผู้ปกครอง
+     */
     const doc = new Document({
       sections: [
+        // ── A: แนวตั้ง — หัวเอกสาร + ส่วนที่ 1-4 ──
         {
-          properties: {},
+          properties: PORTRAIT_PAGE,
           children: [
             // ── หัวเอกสาร ──
             new Paragraph({
@@ -250,7 +272,13 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             // ── ส่วนที่ 4: ข้อมูลอื่นๆ ──
             heading("4. ข้อมูลอื่นๆ ที่จำเป็น"),
             body(val(plan.assessment.strengths ?? s.note)),
+          ],
+        },
 
+        // ── B: แนวนอน — ส่วนที่ 5-6 (ตารางกว้าง) ──
+        {
+          properties: LANDSCAPE_PAGE,
+          children: [
             // ── ส่วนที่ 5: แนวทางการศึกษาและการวางแผน ──
             heading("5. การกำหนดแนวทางการศึกษาและการวางแผนการจัดการศึกษาพิเศษ"),
 
@@ -324,7 +352,13 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
                   ),
                 ]
               : [body("(ยังไม่มีรายการสื่อที่อนุมัติ)", { indent: true })]),
+          ],
+        },
 
+        // ── C: แนวตั้ง — ส่วนที่ 7-8 (ลายเซ็น) ──
+        {
+          properties: PORTRAIT_PAGE,
+          children: [
             // ── ส่วนที่ 7: คณะกรรมการ ──
             heading("7. คณะกรรมการจัดทำแผนการจัดการศึกษาเฉพาะบุคคล"),
             ...[
