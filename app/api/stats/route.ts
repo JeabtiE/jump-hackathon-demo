@@ -43,14 +43,25 @@ export async function GET() {
         : null;
 
     const editedGoals = goals.filter((g) => g.aiOriginal.trim() !== g.finalText.trim()).length;
-    const editedMedia = media.filter((m) => m.aiReason.trim() !== m.finalReason.trim()).length;
+
+    // ⚠️ นับเฉพาะรายการที่ AI เขียนเหตุผลไว้จริง
+    //    ตั้งแต่ระบบเลือกสื่อตามเป้าหมาย (8 ส.ค. 2569) แผนหนึ่งจะมีรายการที่ AI ไม่ได้เลือก
+    //    ปนอยู่ด้วย (aiReason = "" , isApproved = false) ถ้านับรวมเป็นตัวหาร ตัวเลข
+    //    "ครูแก้เหตุผลกี่ %" จะเจือจางลงเรื่อย ๆ ตามขนาดของ mappingTable ไม่ใช่ตามความแม่นของ AI
+    const aiWrittenMedia = media.filter((m) => m.aiReason.trim() !== "");
+    const editedMedia = aiWrittenMedia.filter(
+      (m) => m.aiReason.trim() !== m.finalReason.trim()
+    ).length;
 
     const stats: UsageStats = {
       totalPlans,
       finalizedPlans,
       avgDurationSeconds,
       goalEditRate: goals.length > 0 ? Math.round((editedGoals / goals.length) * 100) : 0,
-      mediaEditRate: media.length > 0 ? Math.round((editedMedia / media.length) * 100) : 0,
+      mediaEditRate:
+        aiWrittenMedia.length > 0
+          ? Math.round((editedMedia / aiWrittenMedia.length) * 100)
+          : 0,
     };
 
     return NextResponse.json(stats);
