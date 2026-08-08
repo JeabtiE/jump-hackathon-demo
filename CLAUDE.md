@@ -89,7 +89,7 @@ Both paths are the same four parts. If you add a third, copy this structure rath
 | Data file | `data/mappingTable.json` | `data/curriculum.json` |
 | Retrieval | `lib/retrieval.ts` → `retrieveMedia()` | `lib/curriculum-retrieval.ts` → `retrieveIndicators()` |
 | Keyed by | disability type + ability levels | subject + grade (derived from ability levels + `Student.gradeLevel`) |
-| LLM's only job | write the justification (`reason`) | pick which retrieved indicator a goal adapts, and phrase the goal |
+| LLM's only job | **narrow** the retrieved list to what fits this plan's goals, and write the justification (`reason`) | pick which retrieved indicator a goal adapts, and phrase the goal |
 | Gate | `resolveMediaRecommendations()` in `app/api/plans/route.ts` | `resolveIndicatorCodes()` in `lib/curriculum-retrieval.ts` |
 | Stored as | `PlanMedia.aiReason` / `finalReason` | `PlanGoal.aiIndicatorCodes` / `finalIndicatorCodes` |
 | Appears in export | ส่วนที่ 6 (table incl. รหัส, ราคา, วิธีการ) | ส่วนที่ 5 (code under each goal + full indicator text) |
@@ -138,7 +138,7 @@ Few-shot examples come from **real IEP documents** (anonymized) so the LLM mimic
 
 ### Rules you must enforce when writing code
 
-- ❌ Never let the LLM choose which media/equipment to recommend
+- ❌ Never let the LLM decide **which media/equipment a student is eligible for** — retrieval alone decides that. Since 8 Aug 2569 the LLM *may narrow* the retrieved list to the items that support the plan's goals (see "Goal-aware media selection" below), but it can only ever return a **subset** of what retrieval handed it. Widening is structurally impossible: `resolveMediaRecommendations()` drops anything it didn't send.
 - ❌ Never let the LLM produce a curriculum indicator code that wasn't in the retrieved list
 - ❌ Never auto-submit anything to a government system
 - ❌ Never auto-fix a consistency warning — flag it, let the teacher decide
@@ -146,6 +146,37 @@ Few-shot examples come from **real IEP documents** (anonymized) so the LLM mimic
 - ✅ Always show the reasoning behind a recommendation (no black box)
 - ✅ An empty result is a valid answer — no matching indicator means `[]`, never a forced match
   (goals for self-help, behaviour, and communication legitimately cite no subject indicator)
+
+### Goal-aware media selection (8 Aug 2569)
+
+The teacher's own description of how she works:
+
+> "เลือกรายการสื่อให้สอดคล้องกับเป้าหมายระยะสั้นระยะยาวที่กำหนดไว้ในแผน IEP กล่าวคือเราจะเลือกสื่อให้สอดคล้องกับสิ่งที่เราวางแผนจะสอนเด็กคนนั้นๆ"
+
+Media is chosen to match **what this plan intends to teach**, not the disability category in the abstract. Two students with the same `disabilityType` and similar ability tags get different media if their goals differ.
+
+How this is implemented — deliberately **not** a second LLM call. The single call at [`callLLM()`](app/api/plans/route.ts) already emits `iepGoals` before `mediaRecommendations`, so the model has written the goals before it picks media. What was missing was permission to *not* pick everything.
+
+```
+retrieveMedia()  → every item the student is eligible for   (rule-based, unchanged)
+      ↓
+LLM             → returns the SUBSET that supports this plan's goals + a reason for each
+      ↓
+resolveMediaRecommendations()
+      ↓
+persist ALL retrieved items:
+   picked      → isApproved = true,  aiReason = the LLM's text
+   not picked  → isApproved = false, aiReason = ""   (teacher can tick it back)
+   LLM picked nothing → fall back to approving everything (old behaviour)
+```
+
+Three rules that came from the 7 real plans in `data/goalMediaPairs.json` — do not "tidy" any of them away:
+
+- **`goalRef` is a hint, never a constraint.** Real plans contain items that support no single goal (กาว, พลาสติกเคลือบ, กระดาษโปสเตอร์ — materials for *making* other media). Never write validation requiring every approved item to resolve to a goal.
+- **Item count is not tied to goal count.** Observed range 1–10 items; a 3-goal plan requested 1 item, a 2-goal plan requested 9. What actually bounds the count is the 2,000 THB cap.
+- **Items the LLM didn't pick are kept, not dropped.** Every real plan spends close to the full 2,000 THB — the teacher is using the entitlement deliberately, so removing her options would be deciding for her.
+
+One consequence worth knowing: `/api/stats` counts `mediaEditRate` only over rows where `aiReason` is non-empty. Including the unpicked rows would dilute the number as `mappingTable` grows, which would measure the table's size rather than the AI's accuracy.
 
 ### The design philosophy behind it
 
@@ -188,7 +219,11 @@ Five tables. The non-obvious decisions:
 
 **`Plan.createdAt` → `finalizedAt`** gives time-per-plan without manual stopwatch tracking.
 
-**`PlanMedia.isApproved` defaults to `true` — intentional, not a bug.** Media items come from the rule-based retrieval (verified against the government subsidy lists), so the system proposes them ready-to-claim; the teacher's job is to *remove* items, not to tick every item on every plan (16 students × every plan would violate the "if it doesn't make the teacher faster, cut it" rule). If the teacher removes every item, a consistency warning in `lib/serializers.ts` asks her to confirm — do not "fix" this default to `false`.
+**`PlanMedia.isApproved` defaults to `true` in the schema — intentional, not a bug.** Media items come from the rule-based retrieval (verified against the government subsidy lists), so the system proposes them ready-to-claim; the teacher's job is to *remove* items, not to tick every item on every plan (16 students × every plan would violate the "if it doesn't make the teacher faster, cut it" rule). If the teacher removes every item, a consistency warning in `lib/serializers.ts` asks her to confirm — do not "fix" this default to `false`.
+
+> Since goal-aware selection (§4), `POST /api/plans` writes the value explicitly per row rather than relying on the default: goal-matched items `true`, the rest `false`. The intent above is unchanged — in the normal case the teacher still ticks nothing, she only removes. The unmatched rows exist so she can *add back* an eligible item the AI didn't connect to a goal. The schema default still applies to any other write path.
+>
+> ⚠️ This means a plan now contains rows the teacher never saw as "recommended". The UI has to make the two groups visually distinct, otherwise an unmatched item is indistinguishable from one she deliberately removed. A read-only `aiApproved` column (mirroring `aiOriginal`/`aiReason`) is the clean way to tell those apart in `/stats` — **not yet added**, because it changes `lib/types.ts` and the UI, which is Dev B's call (§7).
 
 The `/stats` page surfaces all of this. **Never "clean up" this apparent duplication.**
 
@@ -349,7 +384,7 @@ Before pushing: `npm run build` — if the build fails, Vercel can't deploy.
 
 ## 13. Still open — do not guess these
 
-1. ✅ **Reference codes from real plans — CLOSED 7 Aug 2569. All 13 recorded, all 13 verify.** `data/realPlanCodes.json` holds all 13 teacher-confirmed codes plus `BE1784` (code confirmed, disability type still unrecorded — that one line is the only thing left here). Each entry records **the disability type the item was actually requested for**, not one we inferred. `npm run validate:media` checks both that the code exists in the official catalog *and* that `disabilityTypes` in `data/mediaCatalog2568.json` permits that type. Do not invent entries.
+1. ✅ **Reference codes from real plans — CLOSED 7 Aug 2569. All 13 recorded, all 13 verify.** `data/realPlanCodes.json` holds all 14 teacher-confirmed codes. `BE1784`'s disability type — the one line left open here — was **closed 8 Aug 2569 as `intellectual`**, from two real plans (`data/goalMediaPairs.json`, cases INT-01/INT-02) that each requested it as the plan's only item, at 2,000 THB exactly. (For the record: this entry was previously *unrecorded*, not recorded wrongly as `learning`.) Each entry records **the disability type the item was actually requested for**, not one we inferred. `npm run validate:media` checks both that the code exists in the official catalog *and* that `disabilityTypes` in `data/mediaCatalog2568.json` permits that type. Do not invent entries.
 
    **The 3 that used to fail (`BE1802`, `BE04102`, `BE17158`) were never a mapping bug and never a data gap — they were two extraction bugs, now fixed in `scripts/parse_catalog.py`.** The source text was recovered and re-run; all three now get their `disabilityTypes` from real text in the manual. Nothing was hand-written. The two bugs, both worth knowing because the PDF will cause them again:
 
@@ -370,7 +405,9 @@ Before pushing: `npm run build` — if the build fails, Vercel can't deploy.
 
 ## 14. Real document structure (confirmed 24 July from 4 real anonymized IEP examples)
 
-The developer received 4 real filled-in IEP documents from the school (บ้านสันโค้ง, เชียงรายจรูญราษฎร์, สพป.ชร.เขต1) covering autism, intellectual disability (×2), and speech/language. **The raw files contain real student names, national ID numbers, addresses, and phone numbers — they must never be committed to this repo.** Only the anonymized structural patterns extracted from them live in `data/fewShotExamples.json` and the export template.
+The developer received 4 real filled-in IEP documents from the school (บ้านสันโค้ง, เชียงรายจรูญราษฎร์, สพป.ชร.เขต1) covering autism, intellectual disability (×2), and speech/language — **now 7 documents as of 8 Aug 2569**, mined into `data/goalMediaPairs.json` (6 cases: 3 intellectual, 2 autism, 1 speech). **The raw files contain real student names, national ID numbers, addresses, and phone numbers — they must never be committed to this repo.** Only the anonymized structural patterns extracted from them live in `data/fewShotExamples.json`, `data/goalMediaPairs.json`, and the export template.
+
+> 🔒 **Anonymize before writing, not after.** The first version of `goalMediaPairs.json` carried the children's real given names in a `student` key and was staged for commit before it was caught. **`assertNoPII()` does not protect these files** — it matches *field names* against `PII_FIELDS`, so a real name sitting in a field called `student` (or `caseId`, or `note`) passes straight through. The guard covers the LLM request path only. For anything hand-written into `data/`, use opaque case IDs (`INT-01`, `AUT-02`) from the first draft.
 
 ### What was confirmed
 
