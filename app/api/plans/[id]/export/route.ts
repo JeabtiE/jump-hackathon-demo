@@ -46,6 +46,16 @@ const FONT = "TH Sarabun New";
 const BLANK = "..............................";
 
 /**
+ * ขนาดตัวอักษร หน่วยเป็น "ครึ่งพอยต์" (half-points) ตาม TextRun.size ของ docx
+ * ⚠️ ไม่ใช่พอยต์ — 16pt ต้องเขียน 32 ถ้าเขียน 16 จะได้ 8pt (เล็กจนอ่านไม่ออก)
+ *
+ * ทั้งเอกสารใช้ขนาดเดียวคือ 16pt ยกเว้นชื่อเอกสารบนสุด
+ * หัวข้อส่วนที่ 1-8 แยกจากเนื้อหาด้วย bold ไม่ใช่ด้วยขนาด — ตั้งใจให้เป็นแบบนี้
+ */
+const BODY_SIZE = 32; // 16pt — เนื้อหาทั้งหมด รวมหัวข้อและช่องในตาราง
+const TITLE_SIZE = 40; // 20pt — ชื่อเอกสารทั้งฉบับเท่านั้น
+
+/**
  * ขนาด A4 หน่วย twips — เป็น "ฐานแนวตั้ง" เสมอ
  *
  * ⚠️ ห้ามสลับ width/height เองเมื่อจะทำหน้าแนวนอน
@@ -109,7 +119,8 @@ function heading(text: string) {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 280, after: 120 },
-    children: [new TextRun({ text, bold: true, size: 32, font: FONT })],
+    // bold คือสิ่งเดียวที่แยกหัวข้อออกจากเนื้อหา (ขนาดเท่ากัน) — ห้ามถอด
+    children: [new TextRun({ text, bold: true, size: BODY_SIZE, font: FONT })],
   });
 }
 
@@ -117,7 +128,7 @@ function body(text: string, opts: { indent?: boolean; italics?: boolean } = {}) 
   return new Paragraph({
     spacing: { after: 100 },
     indent: opts.indent ? { left: 400 } : undefined,
-    children: [new TextRun({ text, size: 28, font: FONT, italics: opts.italics })],
+    children: [new TextRun({ text, size: BODY_SIZE, font: FONT, italics: opts.italics })],
   });
 }
 
@@ -175,7 +186,7 @@ function cell(text: string, opts: { bold?: boolean } = {}) {
   return new TableCell({
     children: [
       new Paragraph({
-        children: [new TextRun({ text, size: 22, font: FONT, bold: opts.bold })],
+        children: [new TextRun({ text, size: BODY_SIZE, font: FONT, bold: opts.bold })],
       }),
     ],
   });
@@ -218,14 +229,14 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
               alignment: AlignmentType.CENTER,
               spacing: { after: 80 },
               children: [
-                new TextRun({ text: "แผนการจัดการศึกษาเฉพาะบุคคล", bold: true, size: 40, font: FONT }),
+                new TextRun({ text: "แผนการจัดการศึกษาเฉพาะบุคคล", bold: true, size: TITLE_SIZE, font: FONT }),
               ],
             }),
             new Paragraph({
               alignment: AlignmentType.CENTER,
               spacing: { after: 60 },
               children: [
-                new TextRun({ text: "(Individualized Education Program : IEP)", size: 28, font: FONT }),
+                new TextRun({ text: "(Individualized Education Program : IEP)", size: BODY_SIZE, font: FONT }),
               ],
             }),
             new Paragraph({
@@ -234,7 +245,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
               children: [
                 new TextRun({
                   text: "ก่อนการศึกษาขั้นพื้นฐาน  ☐        ระดับการศึกษาขั้นพื้นฐาน  ☐",
-                  size: 24,
+                  size: BODY_SIZE,
                   font: FONT,
                 }),
               ],
@@ -369,10 +380,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             ].flatMap((c) => [
               new Paragraph({
                 spacing: { before: 260 },
-                children: [new TextRun({ text: `${c.name}   ${c.role}`, size: 26, font: FONT })],
+                children: [new TextRun({ text: `${c.name}   ${c.role}`, size: BODY_SIZE, font: FONT })],
               }),
               new Paragraph({
-                children: [new TextRun({ text: `ลงชื่อ ${BLANK}`, size: 24, font: FONT })],
+                children: [new TextRun({ text: `ลงชื่อ ${BLANK}`, size: BODY_SIZE, font: FONT })],
               }),
             ]),
             body(thaiMeetingDateLine(plan.meetingDate)),
@@ -393,7 +404,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
               children: [
                 new TextRun({
                   text: "เอกสารนี้จัดทำโดยระบบ IEP GEN เพื่อช่วยร่างเนื้อหา ครูผู้สอนได้ตรวจสอบและรับรองความถูกต้องแล้ว",
-                  size: 22,
+                  size: BODY_SIZE,
                   italics: true,
                   font: FONT,
                 }),
