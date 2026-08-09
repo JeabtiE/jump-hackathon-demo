@@ -57,6 +57,20 @@ const ABILITY_OPTIONS: Record<
         },
       ],
     },
+    {
+      domain: "readiness",
+      label: "ความพร้อมทางการเรียนรู้",
+      options: [
+        {
+          value: "needs_prewriting_practice",
+          label: "ยังลากเส้น/คุมมือเขียนไม่ได้",
+        },
+        {
+          value: "needs_cognitive_readiness",
+          label: "ยังจับคู่/จำแนก/เรียงลำดับไม่ได้",
+        },
+      ],
+    },
   ],
   learning: [
     {
