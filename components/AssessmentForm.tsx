@@ -13,7 +13,11 @@ import type { AbilityLevels } from "@/lib/types";
 
 const ABILITY_OPTIONS: Record<
   string,
-  { domain: string; label: string; options: { value: string; label: string }[] }[]
+  {
+    domain: string;
+    label: string;
+    options: { value: string; label: string }[];
+  }[]
 > = {
   autism: [
     {
@@ -21,7 +25,10 @@ const ABILITY_OPTIONS: Record<
       label: "การสื่อสาร",
       options: [
         { value: "no_speech_gesture_only", label: "ไม่พูด ใช้ท่าทางสื่อสาร" },
-        { value: "single_word_only", label: "พูดได้เป็นคำเดี่ยว ยังไม่ต่อประโยค" },
+        {
+          value: "single_word_only",
+          label: "พูดได้เป็นคำเดี่ยว ยังไม่ต่อประโยค",
+        },
       ],
     },
     {
@@ -29,7 +36,10 @@ const ABILITY_OPTIONS: Record<
       label: "พฤติกรรม",
       options: [
         { value: "frequent_off_task", label: "วอกแวกบ่อย ลุกจากที่นั่ง" },
-        { value: "difficulty_transition", label: "ปรับตัวยากเมื่อเปลี่ยนกิจกรรม" },
+        {
+          value: "difficulty_transition",
+          label: "ปรับตัวยากเมื่อเปลี่ยนกิจกรรม",
+        },
       ],
     },
     {
@@ -37,24 +47,41 @@ const ABILITY_OPTIONS: Record<
       label: "การช่วยเหลือตนเอง",
       options: [{ value: "needs_prompting", label: "ต้องมีคนเตือนทุกขั้นตอน" }],
     },
+    {
+      domain: "math",
+      label: "การคำนวณ",
+      options: [
+        {
+          value: "needs_concrete_visual_support",
+          label: "ต้องใช้ของจริง/สื่อรูปธรรมช่วยนับ",
+        },
+      ],
+    },
   ],
   learning: [
     {
       domain: "reading",
       label: "การอ่าน",
-      options: [{ value: "cannot_spell_2syllable", label: "สะกดคำ 2 พยางค์ไม่ได้" }],
+      options: [
+        { value: "cannot_spell_2syllable", label: "สะกดคำ 2 พยางค์ไม่ได้" },
+      ],
     },
     {
       domain: "writing",
       label: "การเขียน",
       options: [
-        { value: "poor_handwriting", label: "เขียนไม่เป็นระเบียบ กล้ามเนื้อมือไม่แข็งแรง" },
+        {
+          value: "poor_handwriting",
+          label: "เขียนไม่เป็นระเบียบ กล้ามเนื้อมือไม่แข็งแรง",
+        },
       ],
     },
     {
       domain: "math",
       label: "การคำนวณ",
-      options: [{ value: "cannot_calculate_carry", label: "คำนวณการทดเลขไม่ได้" }],
+      options: [
+        { value: "cannot_calculate_carry", label: "คำนวณการทดเลขไม่ได้" },
+      ],
     },
   ],
   intellectual: [
@@ -62,26 +89,40 @@ const ABILITY_OPTIONS: Record<
       domain: "reading",
       label: "การเรียนรู้ / การรับรู้",
       options: [
-        { value: "needs_concrete_visual_support", label: "ต้องใช้สื่อรูปธรรมและภาพประกอบ" },
+        {
+          value: "needs_concrete_visual_support",
+          label: "ต้องใช้สื่อรูปธรรมและภาพประกอบ",
+        },
       ],
     },
     {
       domain: "math",
       label: "การคำนวณ",
       options: [
-        { value: "needs_concrete_visual_support", label: "ต้องใช้ของจริง/สื่อรูปธรรมช่วยนับ" },
+        {
+          value: "needs_concrete_visual_support",
+          label: "ต้องใช้ของจริง/สื่อรูปธรรมช่วยนับ",
+        },
       ],
     },
     {
       domain: "selfHelp",
       label: "การช่วยเหลือตนเอง",
-      options: [{ value: "needs_routine_structure", label: "ต้องมีโครงสร้างกิจวัตรที่ชัดเจน" }],
+      options: [
+        {
+          value: "needs_routine_structure",
+          label: "ต้องมีโครงสร้างกิจวัตรที่ชัดเจน",
+        },
+      ],
     },
     {
       domain: "behavior",
       label: "พฤติกรรม",
       options: [
-        { value: "needs_simple_instruction", label: "สับสนกับคำสั่งที่ซับซ้อน ต้องการคำสั่งง่าย" },
+        {
+          value: "needs_simple_instruction",
+          label: "สับสนกับคำสั่งที่ซับซ้อน ต้องการคำสั่งง่าย",
+        },
       ],
     },
   ],
@@ -90,7 +131,10 @@ const ABILITY_OPTIONS: Record<
       domain: "communication",
       label: "การสื่อสาร",
       options: [
-        { value: "limited_expressive_language", label: "พูดได้จำกัด ใช้คำ/ประโยคสั้นมาก" },
+        {
+          value: "limited_expressive_language",
+          label: "พูดได้จำกัด ใช้คำ/ประโยคสั้นมาก",
+        },
         { value: "unclear_articulation", label: "พูดได้แต่ออกเสียงไม่ชัด" },
       ],
     },
@@ -113,7 +157,9 @@ export default function AssessmentForm({
   }) => void;
   loading: boolean;
 }) {
-  const [abilityLevels, setAbilityLevels] = useState<Record<string, string>>({});
+  const [abilityLevels, setAbilityLevels] = useState<Record<string, string>>(
+    {},
+  );
   const [strengths, setStrengths] = useState("");
   const [academicYear, setAcademicYear] = useState(CURRENT_YEAR);
   const [term, setTerm] = useState("1");
@@ -127,17 +173,23 @@ export default function AssessmentForm({
 
       {domains.length === 0 ? (
         <p className="text-sm text-amber-600">
-          ยังไม่มีข้อมูลสำหรับความพิการประเภทนี้ — คน A ต้องเพิ่มใน mappingTable.json ก่อน
+          ยังไม่มีข้อมูลสำหรับความพิการประเภทนี้ — คน A ต้องเพิ่มใน
+          mappingTable.json ก่อน
         </p>
       ) : (
         <div className="space-y-3">
           {domains.map((d) => (
             <div key={d.domain}>
-              <label className="mb-1 block text-xs text-slate-500">{d.label}</label>
+              <label className="mb-1 block text-xs text-slate-500">
+                {d.label}
+              </label>
               <select
                 value={abilityLevels[d.domain] ?? ""}
                 onChange={(e) =>
-                  setAbilityLevels((prev) => ({ ...prev, [d.domain]: e.target.value }))
+                  setAbilityLevels((prev) => ({
+                    ...prev,
+                    [d.domain]: e.target.value,
+                  }))
                 }
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               >
@@ -164,12 +216,16 @@ export default function AssessmentForm({
           placeholder="เช่น ชอบวาดภาพ จดจำภาพได้ดี"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
-        <p className="mt-1 text-xs text-amber-600">⚠️ ห้ามกรอกชื่อจริงหรือข้อมูลระบุตัวตน</p>
+        <p className="mt-1 text-xs text-amber-600">
+          ⚠️ ห้ามกรอกชื่อจริงหรือข้อมูลระบุตัวตน
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">ปีการศึกษา</label>
+          <label className="mb-1 block text-xs text-slate-500">
+            ปีการศึกษา
+          </label>
           <input
             value={academicYear}
             onChange={(e) => setAcademicYear(e.target.value)}
@@ -190,7 +246,9 @@ export default function AssessmentForm({
       </div>
 
       <button
-        onClick={() => onSubmit({ abilityLevels, strengths, academicYear, term })}
+        onClick={() =>
+          onSubmit({ abilityLevels, strengths, academicYear, term })
+        }
         disabled={loading || !hasAnyAbility}
         className="w-full rounded-lg bg-teal-600 px-4 py-2.5 font-medium text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
