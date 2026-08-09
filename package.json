@@ -13,6 +13,7 @@
     "test:warnings": "node scripts/test-warnings.mjs",
     "test:curriculum": "node --import ./scripts/register-alias.mjs scripts/test-curriculum.mjs",
     "validate:media": "node scripts/validate_media_catalog.mjs",
+    "verify:math": "node scripts/verify_math_text_repair.mjs",
     "fix:media": "node scripts/fix_media_catalog.mjs",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
