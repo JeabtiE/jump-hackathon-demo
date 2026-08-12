@@ -10,6 +10,11 @@
  *    - ส่วนที่ 1-4 เติมจากข้อมูลใน DB
  *    - ข้อความเป้าหมายที่ AI เขียนว่า "นักเรียน" ถูกแทนที่ด้วยชื่อจริงตรงนี้
  *    LLM ไม่เคยเห็นชื่อเด็กเลยตลอดกระบวนการ
+ *
+ * ✏️ 12 ส.ค. 2569 — ส่วนที่ 5 (เป้าหมาย/จุดประสงค์เชิงพฤติกรรม) เปลี่ยนจากความเรียง
+ *    เป็นตาราง ให้สไตล์เดียวกับตารางส่วนที่ 6 คอลัมน์: ที่ / จุดประสงค์เชิงพฤติกรรม /
+ *    เกณฑ์การประเมิน / ระยะเวลา / ตัวชี้วัดที่ปรับ — ใช้ข้อมูลเดิมที่มีอยู่แล้วบน
+ *    PlanGoal (finalText, criterion, timeframe, finalIndicatorCodes) ไม่ต้องแก้ schema
  */
 
 import { NextResponse } from "next/server";
@@ -155,16 +160,6 @@ function amountCellText(m: { price: string | null; mode: string | null }): strin
 }
 
 /**
- * บรรทัด "ปรับจากตัวชี้วัด" ใต้เป้าหมาย — คืน [] ถ้าไม่มีรหัส
- * เป้าหมายด้านทักษะ (สื่อสาร/ช่วยเหลือตนเอง) ไม่อ้างตัวชี้วัดโดยปกติ
- * และแผนที่สร้างก่อนมีฟีเจอร์นี้ก็ไม่มี → ต้องไม่มีบรรทัดว่างโผล่ในเอกสาร
- */
-function indicatorLine(codes: string[]) {
-  if (!codes.length) return [];
-  return [body(`     ปรับจากตัวชี้วัด: ${codes.join(", ")}`, { indent: true })];
-}
-
-/**
  * บล็อกกางข้อความตัวชี้วัดท้ายส่วนที่ 5
  * ครูการศึกษาพิเศษรู้รหัสอยู่แล้ว แต่พี่เลี้ยงเด็กพิการ (วุฒิ ม.6) ไม่รู้ว่า
  * "ท 1.1 ป.1/1" คืออะไร — CLAUDE.md §3 ให้ออกแบบเพื่อพี่เลี้ยง ไม่ใช่เพื่อผู้เชี่ยวชาญ
@@ -304,18 +299,39 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             body("เป้าหมายระยะยาว 1 ปี และจุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น)", {
               italics: true,
             }),
+            // ✏️ 12 ส.ค. 2569 — เปลี่ยนจากรายการความเรียงเป็นตาราง สไตล์เดียวกับส่วนที่ 6
+            //    คอลัมน์ตรงกับข้อมูลที่มีอยู่แล้วบน PlanGoal เป๊ะๆ ไม่ได้เพิ่ม field ใหม่
             ...(selectedGoals.length > 0
-              ? selectedGoals.flatMap((g, i) => [
-                  // 🔒 แทนที่คำว่า "นักเรียน" ด้วยชื่อจริง — ทำฝั่งเราหลัง LLM คืนผลแล้ว
-                  body(`${i + 1}. ${personalizeForExport(g.finalText, s.fullName)}`, {
-                    indent: true,
+              ? [
+                  new Table({
+                    width: { size: 100, type: WidthType.PERCENTAGE },
+                    rows: [
+                      new TableRow({
+                        children: [
+                          cell("ที่", { bold: true }),
+                          cell("จุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น)", { bold: true }),
+                          cell("เกณฑ์การประเมิน", { bold: true }),
+                          cell("ระยะเวลา", { bold: true }),
+                          cell("ตัวชี้วัดที่ปรับ", { bold: true }),
+                        ],
+                      }),
+                      ...selectedGoals.map(
+                        (g, i) =>
+                          new TableRow({
+                            children: [
+                              cell(String(i + 1)),
+                              // 🔒 แทนที่คำว่า "นักเรียน" ด้วยชื่อจริง — ทำฝั่งเราหลัง LLM คืนผลแล้ว
+                              cell(personalizeForExport(g.finalText, s.fullName)),
+                              cell(g.criterion?.trim() || CELL_BLANK),
+                              cell(g.timeframe?.trim() || CELL_BLANK),
+                              // เป้าหมายด้านทักษะ (สื่อสาร/ช่วยเหลือตนเอง) ไม่อ้างตัวชี้วัดโดยปกติ — "-" ไม่ใช่ error
+                              cell(g.finalIndicatorCodes.length ? g.finalIndicatorCodes.join(", ") : "-"),
+                            ],
+                          })
+                      ),
+                    ],
                   }),
-                  body(
-                    `     เกณฑ์การประเมิน: ${g.criterion ?? "-"}   ระยะเวลา: ${g.timeframe ?? "-"}`,
-                    { indent: true }
-                  ),
-                  ...indicatorLine(g.finalIndicatorCodes),
-                ])
+                ]
               : [body("(ยังไม่ได้เลือกเป้าหมาย)", { indent: true })]),
 
             // กางข้อความตัวชี้วัดของเป้าหมายที่เลือกไว้ทั้งหมด (ไม่ซ้ำ)
