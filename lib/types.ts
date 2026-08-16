@@ -225,12 +225,15 @@ export interface UpdatePlanRequest {
 export interface UsageStats {
   totalPlans: number;
   finalizedPlans: number;
-  /** เวลาเฉลี่ยที่ใช้ทำแผน 1 ฉบับ (วินาที) */
   avgDurationSeconds: number | null;
-  /** สัดส่วนเป้าหมายที่ครูแก้จากต้นฉบับ AI (%) */
   goalEditRate: number;
-  /** สัดส่วนเหตุผลเบิกสื่อที่ครูแก้ (%) */
   mediaEditRate: number;
+  /** แบ่งละเอียดจาก goalEditRate เดิม — สัดส่วน % ของเป้าหมายทั้งหมด รวมกัน = 100 */
+  goalEditBreakdown: {
+    uneditedPct: number;
+    minorEditPct: number;
+    majorEditPct: number;
+  };
 }
 
 // ═════════════════════════════════════════════
@@ -314,4 +317,32 @@ export interface LLMOutput {
 export interface ErrorResponse {
   error: string;
   detail?: string;
+}
+
+// ═════════════════════════════════════════════
+// API: ประวัติพัฒนาการนักเรียน (Track A)
+// ═════════════════════════════════════════════
+
+/** GET /api/students/[id]/history */
+export interface StudentHistoryEntry {
+  assessmentId: string;
+  assessedAt: string; // ISO date
+  abilityLevels: AbilityLevels;
+  strengths: string | null;
+  plans: {
+    id: string;
+    academicYear: string;
+    term: string;
+    status: PlanStatus;
+    finalizedAt: string | null;
+    goalCount: number;
+    selectedGoalCount: number;
+  }[];
+}
+
+export interface StudentHistoryDTO {
+  studentId: string;
+  code: string;
+  fullName: string | null;
+  history: StudentHistoryEntry[];
 }
