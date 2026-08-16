@@ -15,6 +15,7 @@ import type {
   StudentSummary,
 } from "@/lib/types";
 import BirthDatePicker from "./birthDatePicker";
+import Link from "next/link";
 
 const DISABILITY_OPTIONS: {
   value: DisabilityType;
@@ -368,7 +369,7 @@ export default function StudentPicker({
       ) : (
         <ul className="space-y-1.5">
           {students.map((s) => (
-            <li key={s.id}>
+            <li key={s.id} className="relative">
               <button
                 onClick={() => onSelect(s)}
                 className={`w-full rounded-lg border p-3 text-left text-sm transition ${
@@ -392,6 +393,14 @@ export default function StudentPicker({
                   แผนที่ทำแล้ว {s.planCount} ฉบับ
                 </span>
               </button>
+
+              <Link
+                href={`/students/${s.id}`}
+                className="absolute right-3 top-3 text-xs text-teal-600 underline hover:text-teal-700"
+                onClick={(e) => e.stopPropagation()}
+              >
+                ดูประวัติ
+              </Link>
             </li>
           ))}
         </ul>
