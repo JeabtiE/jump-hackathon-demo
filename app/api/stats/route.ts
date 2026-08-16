@@ -18,6 +18,39 @@ import type { UsageStats } from "@/lib/types";
 // สำหรับใบสมัคร ต้องดึงสดจาก DB ทุกครั้ง
 export const dynamic = "force-dynamic";
 
+/** Levenshtein distance — ใช้วัดว่าข้อความเปลี่ยนไปมากแค่ไหน */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+/**
+ * ⚠️ threshold 0.85 เป็นค่าเริ่มต้นที่ยังไม่ได้ calibrate กับข้อมูลจริง
+ *    ถ้าดูตัวเลขจริงแล้วรู้สึกว่าแบ่งไม่ตรงสัญชาตญาณ (เช่น แก้แค่คำเดียวแต่ขึ้น major)
+ *    ปรับเลขนี้ได้เลย เป็นจุดเดียวที่ต้องแก้
+ */
+function editSeverity(original: string, final: string): "unedited" | "minor" | "major" {
+  const a = original.trim();
+  const b = final.trim();
+  if (a === b) return "unedited";
+  const dist = levenshtein(a, b);
+  const similarity = 1 - dist / Math.max(a.length, b.length, 1);
+  return similarity >= 0.85 ? "minor" : "major";
+}
+
 export async function GET() {
   try {
     const [totalPlans, finalizedPlans, goals, media] = await Promise.all([
@@ -53,6 +86,20 @@ export async function GET() {
       (m) => m.aiReason.trim() !== m.finalReason.trim()
     ).length;
 
+    const severities = goals.map((g) => editSeverity(g.aiOriginal, g.finalText));
+    const totalGoals = severities.length || 1; // กัน div by zero
+    const goalEditBreakdown = {
+      uneditedPct: Math.round(
+        (severities.filter((s) => s === "unedited").length / totalGoals) * 100
+      ),
+      minorEditPct: Math.round(
+        (severities.filter((s) => s === "minor").length / totalGoals) * 100
+      ),
+      majorEditPct: Math.round(
+        (severities.filter((s) => s === "major").length / totalGoals) * 100
+      ),
+    };
+
     const stats: UsageStats = {
       totalPlans,
       finalizedPlans,
@@ -62,6 +109,7 @@ export async function GET() {
         aiWrittenMedia.length > 0
           ? Math.round((editedMedia / aiWrittenMedia.length) * 100)
           : 0,
+      goalEditBreakdown,
     };
 
     return NextResponse.json(stats);
