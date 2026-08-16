@@ -19,7 +19,9 @@ export default function StatsPage() {
   }, []);
 
   if (!stats) {
-    return <main className="mx-auto max-w-3xl p-8 text-slate-400">กำลังโหลด...</main>;
+    return (
+      <main className="mx-auto max-w-3xl p-8 text-slate-400">กำลังโหลด...</main>
+    );
   }
 
   const cards = [
@@ -40,23 +42,33 @@ export default function StatsPage() {
       <a href="/" className="text-sm text-slate-400 hover:text-slate-600">
         ← กลับหน้าหลัก
       </a>
-      <h1 className="mb-1 mt-4 text-2xl font-bold text-slate-900">สถิติการใช้งาน</h1>
+      <h1 className="mb-1 mt-4 text-2xl font-bold text-slate-900">
+        สถิติการใช้งาน
+      </h1>
       <p className="mb-6 text-sm text-slate-500">
         ตัวเลขเหล่านี้ใช้เป็นหลักฐานประกอบใบสมัคร — ระบบเก็บให้อัตโนมัติ
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
         {cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-5">
+          <div
+            key={c.label}
+            className="rounded-xl border border-slate-200 bg-white p-5"
+          >
             <p className="text-xs text-slate-500">{c.label}</p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{c.value}</p>
           </div>
         ))}
       </div>
+      <div className="mt-2 text-sm text-gray-500">
+        ไม่แก้เลย {stats.goalEditBreakdown.uneditedPct}% · แก้เล็กน้อย{" "}
+        {stats.goalEditBreakdown.minorEditPct}% · แก้เยอะ{" "}
+        {stats.goalEditBreakdown.majorEditPct}%
+      </div>
 
       <p className="mt-6 text-xs text-slate-400">
-        💡 &ldquo;เป้าหมายที่ครูแก้ %&rdquo; ยิ่งต่ำ = AI ร่างได้ตรงใจครูมากขึ้น ·
-        ทุกจุดที่ครูแก้คือ insight ว่าระบบยังไม่ดีพอตรงไหน
+        💡 &ldquo;เป้าหมายที่ครูแก้ %&rdquo; ยิ่งต่ำ = AI ร่างได้ตรงใจครูมากขึ้น
+        · ทุกจุดที่ครูแก้คือ insight ว่าระบบยังไม่ดีพอตรงไหน
       </p>
     </main>
   );
