@@ -3,11 +3,7 @@
 import { useEffect, useState } from "react";
 import type { StudentHistoryDTO } from "@/lib/types";
 
-export default function StudentHistoryPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function StudentHistoryPage({ params }: { params: { id: string } }) {
   const [data, setData] = useState<StudentHistoryDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,25 +36,31 @@ export default function StudentHistoryPage({
 
       <div className="space-y-6">
         {data.history.map((entry) => (
-          <div
-            key={entry.assessmentId}
-            className="border-l-2 border-teal-500 pl-4"
-          >
+          <div key={entry.assessmentId} className="border-l-2 border-teal-500 pl-4">
             <p className="text-sm text-gray-500">
               {new Date(entry.assessedAt).toLocaleDateString("th-TH", {
                 year: "numeric",
                 month: "long",
               })}
             </p>
-            {entry.strengths && (
-              <p className="mt-1 text-sm">{entry.strengths}</p>
-            )}
+            {entry.strengths && <p className="mt-1 text-sm">{entry.strengths}</p>}
+
+            {/* ✏️ เพิ่มลิงก์ดาวน์โหลด .docx ต่อแผน — ใช้ /api/plans/[id]/export ที่มีอยู่แล้ว
+                ไม่ต้องสร้าง endpoint ใหม่ ไม่ต้องแก้ types.ts เพิ่ม */}
             <div className="mt-2 space-y-1">
               {entry.plans.map((p) => (
-                <div key={p.id} className="text-sm">
-                  ปีการศึกษา {p.academicYear} เทอม {p.term} — เลือกเป้าหมาย{" "}
-                  {p.selectedGoalCount}/{p.goalCount} ข้อ
-                  {p.status === "finalized" ? " ✓ ยืนยันแล้ว" : " (ร่าง)"}
+                <div key={p.id} className="flex items-center justify-between text-sm">
+                  <span>
+                    ปีการศึกษา {p.academicYear} เทอม {p.term} — เลือกเป้าหมาย{" "}
+                    {p.selectedGoalCount}/{p.goalCount} ข้อ
+                    {p.status === "finalized" ? " ✓ ยืนยันแล้ว" : " (ร่าง)"}
+                  </span>
+                  <a
+                    href={`/api/plans/${p.id}/export`}
+                    className="ml-2 shrink-0 text-xs text-teal-600 hover:underline"
+                  >
+                    ดาวน์โหลด .docx
+                  </a>
                 </div>
               ))}
             </div>
