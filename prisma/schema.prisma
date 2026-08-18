@@ -10,6 +10,9 @@
 //    (= หลักฐานสำหรับใบสมัคร ไม่ต้องมานั่งจดมือ)
 // 3. แยก Assessment ออกจาก Plan → เก็บพัฒนาการเด็กข้ามปีได้
 //    (ตอบโจทย์กฎหมายที่บังคับให้ทบทวนแผนปีละครั้ง)
+// 4. ✏️ 17 ส.ค. 2569 — PlanGoal ผูกกับ PlanDomainSection แทนที่จะผูกกับ Plan
+//    ตรงๆ เพื่อให้ตรงโครงสร้างเอกสารจริง (1 แถวในตารางส่วนที่ 5 = 1 domain
+//    ไม่ใช่ 1 เป้าหมาย) — ดูรายละเอียดที่ model PlanDomainSection ด้านล่าง
 // ─────────────────────────────────────────────────────────────
 
 generator client {
@@ -82,7 +85,10 @@ model Assessment {
 
   /// { "reading": "cannot_spell_2syllable", "communication": "no_speech_gesture_only" }
   abilityLevels Json
-  /// จุดเด่น/สิ่งที่ทำได้
+  /// จุดเด่น/สิ่งที่ทำได้ — ⚠️ ค่ารวมทั้งแผน (legacy) ตั้งแต่มี PlanDomainSection
+  /// แล้ว จุดเด่น/จุดที่ควรพัฒนาแบบละเอียดต่อ domain ย้ายไปอยู่ที่นั่นแทน
+  /// ฟิลด์นี้ยังคงไว้เพื่อ backward-compat กับแผนเก่า และเป็น fallback
+  /// ตอนส่ง prompt ถ้ายังไม่มีข้อมูลต่อ domain
   strengths     String?
 
   assessedAt DateTime @default(now())
@@ -124,24 +130,71 @@ model Plan {
   /// เวลาที่ครูกดยืนยัน → createdAt ถึง finalizedAt = เวลาที่ใช้ทำแผนจริง
   finalizedAt DateTime?
 
-  goals PlanGoal[]
-  media PlanMedia[]
+  /// ✏️ 17 ส.ค. 2569 — เป้าหมายไม่ผูกกับ Plan ตรงๆ อีกต่อไป แต่ผูกผ่าน
+  /// PlanDomainSection แทน (ดูเหตุผลที่ model นั้น)
+  domainSections PlanDomainSection[]
+  media          PlanMedia[]
 
   @@index([studentId])
   @@index([status])
 }
 
-// ── เป้าหมายเชิงพฤติกรรม ─────────────────────────────────────
-model PlanGoal {
+// ── หนึ่งแถวในตารางส่วนที่ 5 ของเอกสารจริง (1 domain ต่อ 1 แถว) ──
+// ✏️ ใหม่ 17 ส.ค. 2569 — ยืนยันโครงสร้างจากเอกสารจริง 3 ฉบับ (นักเรียนต่างโรงเรียน
+//    ต่างประเภทความพิการ แต่โครงสร้างตารางเหมือนกันเป๊ะ): 1 แถว = 1 domain ประกอบด้วย
+//    จุดเด่น + จุดที่ควรพัฒนา + เป้าหมายระยะยาว 1 ปี + จุดประสงค์ระยะสั้นหลายข้อ +
+//    วิธีประเมินผล + ผู้รับผิดชอบ — ไม่ใช่ 1 แถวต่อ 1 เป้าหมายแบบที่ระบบเคยทำ
+model PlanDomainSection {
   id     String @id @default(cuid())
   planId String
   plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// key เดียวกับที่ใช้ใน AssessmentForm.tsx (ABILITY_OPTIONS) เช่น "communication",
+  /// "math", "selfHelp" — ต้องตรงกัน ไม่งั้น getDomainLabel() หา label ไม่เจอ
+  domain String
+
+  /// ⚠️ AI ร่างจากค่า dropdown (abilityLevels) ที่ครูเลือกไว้ — ห้ามแก้ ใช้เทียบว่า
+  /// ครูแก้อะไรบ้าง (เหมือน pattern aiOriginal/finalText ของ PlanGoal)
+  aiStrengths    String
+  finalStrengths String
+
+  aiDevelopmentAreas    String
+  finalDevelopmentAreas String
+
+  /// เป้าหมายระยะยาว 1 ปี — ข้อความอิสระ 1 ก้อนต่อ domain (ไม่ใช่ต่อเป้าหมายย่อย)
+  aiLongTermGoal    String
+  finalLongTermGoal String
+
+  /// วิธีการประเมินผล เช่น "การสังเกตพฤติกรรม, การบันทึกข้อมูล" — 1 ค่าต่อ domain
+  /// ⚠️ concept นี้ต่างจาก PlanGoal.criterion (เกณฑ์ผ่านของเป้าหมายย่อยแต่ละข้อ)
+  aiEvaluationMethod    String
+  finalEvaluationMethod String
+
+  /// ผู้รับผิดชอบ domain นี้ — ครูกรอกเอง ไม่ใช่ AI คิด (ไม่มีข้อมูลให้ AI เดาได้)
+  responsibleTeacherName String?
+
+  orderIndex Int @default(0)
+
+  /// จุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น) — หลายข้อต่อ 1 domain
+  goals PlanGoal[]
+
+  @@index([planId])
+}
+
+// ── เป้าหมายเชิงพฤติกรรม (จุดประสงค์ระยะสั้น 1 ข้อ) ───────────────
+model PlanGoal {
+  id        String            @id @default(cuid())
+  sectionId String
+  section   PlanDomainSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   /// ⚠️ ข้อความที่ AI ร่างครั้งแรก — ห้ามแก้ ใช้เทียบว่าครูแก้อะไรบ้าง
   aiOriginal String
   /// ข้อความหลังครูแก้ (ถ้าไม่แก้ = เท่ากับ aiOriginal)
   finalText  String
 
+  /// ⚠️ เกณฑ์ผ่าน/ระยะเวลา เก็บไว้แยกเผื่อ UI ต้องการแก้เป็นช่องย่อย แต่ตอน export
+  /// เอกสารจริงไม่มีคอลัมน์แยก — ข้อความนี้ถูกฝังรวมอยู่ใน finalText อยู่แล้ว
+  /// (เช่น "...ได้อย่างน้อย 4 ใน 5 ครั้ง ภายใน 3 เดือน") ไม่ต้องคัดลอกซ้ำตอน render
   criterion String?
   timeframe String?
 
@@ -156,7 +209,7 @@ model PlanGoal {
   isSelected Boolean @default(false)
   orderIndex Int     @default(0)
 
-  @@index([planId])
+  @@index([sectionId])
 }
 
 // ── สื่อ/สิ่งอำนวยความสะดวก (บัญชี ก/ข) ──────────────────────

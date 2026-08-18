@@ -7,6 +7,10 @@
  * 🔑 หลักการ: สื่อ/บัญชี ก-ข มาจาก mappingTable เท่านั้น
  *    LLM มีหน้าที่แค่เรียบเรียงภาษา ไม่มีสิทธิ์เลือกสื่อเอง
  *
+ * ✏️ 17 ส.ค. 2569 — LLMOutput เปลี่ยนจาก iepGoals แบน เป็น domainSections
+ *    ที่มี goals ซ้อนข้างใน → บันทึกลง DB เป็น 2 ชั้น (PlanDomainSection → PlanGoal)
+ *    mediaRecommendations ไม่แตะเลย เหมือนเดิมทุกประการ
+ *
  * 💡 ไม่มี ANTHROPIC_API_KEY → ใช้ mock data (คน B พัฒนา UI ได้ทันที)
  */
 
@@ -26,33 +30,63 @@ import { buildAnnualContextsByPlan, toPlanDTO } from "@/lib/serializers";
 import { fetchAnnualMediaContext } from "@/lib/plan-queries";
 import type { CreatePlanRequest, IndicatorEntry, LLMOutput, MediaEntry } from "@/lib/types";
 
-/** mock output สำหรับพัฒนา UI โดยไม่ต้องมี API key */
-function buildMockOutput(media: MediaEntry[], indicators: IndicatorEntry[]): LLMOutput {
-  return {
-    iepGoals: [
+const INCLUDE = {
+  student: true,
+  domainSections: {
+    orderBy: { orderIndex: "asc" as const },
+    include: { goals: { orderBy: { orderIndex: "asc" as const } } },
+  },
+  media: true,
+};
+
+/**
+ * mock output สำหรับพัฒนา UI โดยไม่ต้องมี API key
+ *
+ * ⚠️ สร้าง 1 domainSection ต่อ 1 domain ที่ครูกรอกระดับความสามารถไว้จริง
+ *    (ไม่ใช่ทุก domain ที่มีในระบบ) — ตัวชี้วัดที่ retrieve มาแนบไว้ที่ domain
+ *    แรกที่มีการเรียนวิชาการเท่านั้น (reading/writing/math) domain อื่น
+ *    (communication/behavior/selfHelp) ไม่อ้างตัวชี้วัดกลุ่มสาระ
+ */
+function buildMockOutput(
+  abilityLevels: Record<string, string>,
+  media: MediaEntry[],
+  indicators: IndicatorEntry[]
+): LLMOutput {
+  const domains = Object.keys(abilityLevels).filter((d) => abilityLevels[d]);
+  const ACADEMIC_DOMAINS = new Set(["reading", "writing", "math"]);
+  const firstAcademicDomain = domains.find((d) => ACADEMIC_DOMAINS.has(d));
+
+  const domainSections = (domains.length > 0 ? domains : ["communication"]).map((domain) => ({
+    domain,
+    strengths: `[MOCK] นักเรียนให้ความร่วมมือเมื่อได้รับการกระตุ้นเตือนในด้าน ${domain}`,
+    developmentAreas: `[MOCK] ยังต้องพัฒนาความสามารถด้าน ${domain} ตามระดับที่ประเมินไว้ (${abilityLevels[domain] ?? "ไม่ระบุ"})`,
+    longTermGoal: `[MOCK] ภายในสิ้นปีการศึกษา นักเรียนจะมีความสามารถด้าน ${domain} ดีขึ้นอย่างมีนัยสำคัญ`,
+    evaluationMethod: "[MOCK] สังเกตพฤติกรรม + แบบบันทึกผลการปฏิบัติงาน",
+    shortTermObjectives: [
       {
-        text: "[MOCK] นักเรียนสามารถใช้สื่อที่กำหนดเพื่อสื่อสารความต้องการพื้นฐาน 3 อย่าง ได้ถูกต้อง 8 ใน 10 ครั้ง ภายในภาคเรียนนี้",
+        text: `[MOCK] นักเรียนสามารถใช้สื่อที่กำหนดเพื่อฝึกด้าน ${domain} ได้ถูกต้อง 8 ใน 10 ครั้ง ภายในภาคเรียนนี้`,
         criterion: "8 ใน 10 ครั้ง",
         timeframe: "ภายในภาคเรียนนี้",
-        // หยิบตัวชี้วัดตัวแรกที่ retrieve ได้ — ให้คน B เห็น UI กรณี "มีตัวชี้วัด"
-        indicatorCodes: indicators.slice(0, 1).map((i) => i.code),
+        // ตัวชี้วัดผูกกับ domain วิชาการตัวแรกที่เจอเท่านั้น — domain อื่นปล่อยว่างตั้งใจ
+        indicatorCodes:
+          domain === firstAcademicDomain ? indicators.slice(0, 1).map((i) => i.code) : [],
       },
       {
-        text: "[MOCK] นักเรียนสามารถทำกิจกรรมที่ได้รับมอบหมายจนเสร็จ โดยมีการเตือนไม่เกิน 2 ครั้ง ภายในภาคเรียนนี้",
+        text: `[MOCK] นักเรียนสามารถทำกิจกรรมด้าน ${domain} ที่ได้รับมอบหมายจนเสร็จ โดยมีการเตือนไม่เกิน 2 ครั้ง ภายในภาคเรียนนี้`,
         criterion: "เตือนไม่เกิน 2 ครั้ง",
         timeframe: "ภายในภาคเรียนนี้",
-        // ตั้งใจปล่อยว่าง — เป้าหมายด้านทักษะไม่อ้างตัวชี้วัด คน B ต้องเห็นเคสนี้ด้วย
         indicatorCodes: [],
       },
     ],
+  }));
+
+  return {
+    domainSections,
     // ตั้งใจเลือกแค่ครึ่งเดียว (อย่างน้อย 1 รายการถ้ามีสื่อเลย) — ของจริง LLM ก็เลือกไม่ครบ
-    // คน B ต้องเห็นเคส "มีรายการที่ isApproved = false ปนอยู่ในแผน" ตั้งแต่ตอนพัฒนา UI
-    // ไม่งั้นจะสร้าง UI จากเคสที่ไม่มีวันเกิดจริง (เหมือนเหตุผลของ indicatorCodes: [] ข้างบน)
     mediaRecommendations: media.slice(0, Math.max(1, Math.ceil(media.length / 2))).map((m, i) => ({
       code: m.code,
       item: m.item,
       category: m.category,
-      // เว้น goalRef ของรายการที่ 2 เป็นต้นไป — สื่อที่ผูกเป้าหมายไม่ได้เป็นเรื่องปกติในแผนจริง
       goalRef: i === 0 ? "goal_1" : undefined,
       reason: `[MOCK] ${m.rationale}`,
     })),
@@ -61,18 +95,7 @@ function buildMockOutput(media: MediaEntry[], indicators: IndicatorEntry[]): LLM
 
 /**
  * จับคู่รายการที่ LLM คืนมา → รายการจริงที่ retrieve มา (CLAUDE.md §4)
- *
- * 🔑 รหัส/ชื่อ/บัญชี/ราคา/วิธีการ ยึดจาก mappingTable เท่านั้น — จาก LLM เอาแค่ "เหตุผล"
- *    รายการที่จับคู่ไม่ได้ถูกทิ้ง เพื่อไม่ให้สื่อที่เบิกไม่ได้หลุดเข้าเอกสาร
- *
- * 🔑 GOAL-AWARE (8 ส.ค. 2569): LLM เลือก "บางรายการ" ที่ตรงกับเป้าหมายในแผนนี้
- *    แต่ระบบยังบันทึก **ทุกรายการที่เบิกได้** ลงแผน ต่างกันแค่ค่า isApproved
- *      - LLM เลือก      → isApproved = true  + เหตุผลจาก LLM
- *      - LLM ไม่ได้เลือก → isApproved = false + เหตุผลว่าง (ครูติ๊กกลับเองได้)
- *
- *    ที่ไม่ทิ้งรายการที่ไม่ได้เลือก เพราะแผนจริงชี้ว่าครูเติมรายการจนเกือบเต็มวงเงิน
- *    2,000 บาทเสมอ (data/goalMediaPairs.json _keyFindings ข้อ 5) การตัดตัวเลือกทิ้ง
- *    จึงเท่ากับตัดสินใจแทนครูในเรื่องที่ครูตั้งใจใช้สิทธิ์ให้เต็ม
+ * ไม่แตะจากเวอร์ชันก่อน — media ไม่ได้ผูกกับ domain section เป็นการเฉพาะ
  */
 function resolveMediaRecommendations(
   llmMedia: LLMOutput["mediaRecommendations"],
@@ -84,7 +107,6 @@ function resolveMediaRecommendations(
   const reasonByCode = new Map<string, string>();
 
   for (const rec of llmMedia ?? []) {
-    // จับคู่ด้วยรหัสก่อน (แม่นกว่า) ค่อย fallback เป็นชื่อ เผื่อ LLM ตกช่อง code
     const entry = (rec.code && byCode.get(rec.code.trim())) || byItem.get(rec.item?.trim() ?? "");
     if (!entry) {
       console.warn("ทิ้งรายการสื่อที่ไม่อยู่ใน retrieval:", rec.code ?? rec.item);
@@ -94,8 +116,6 @@ function resolveMediaRecommendations(
     reasonByCode.set(entry.code, rec.reason ?? "");
   }
 
-  // LLM ไม่ได้เลือกอะไรเลย (parse เพี้ยน / เลือกแคบเกินจนว่าง) → กลับไปพฤติกรรมเดิม
-  // คืออนุมัติทุกรายการที่เบิกได้ ดีกว่าส่งแผนที่ส่วนที่ 6 ว่างเปล่าให้ครู
   if (reasonByCode.size === 0) {
     return retrievedMedia.map((entry) => ({
       entry,
@@ -104,7 +124,6 @@ function resolveMediaRecommendations(
     }));
   }
 
-  // เรียงรายการที่ LLM เลือกไว้ก่อน ครูจะได้เห็นสิ่งที่ตรงเป้าหมายที่สุดบนสุด
   const picked = retrievedMedia.filter((m) => reasonByCode.has(m.code));
   const rest = retrievedMedia.filter((m) => !reasonByCode.has(m.code));
 
@@ -114,11 +133,6 @@ function resolveMediaRecommendations(
       reason: reasonByCode.get(entry.code) ?? "",
       isApproved: true,
     })),
-    // เหตุผลเว้นว่างไว้ตั้งใจ ไม่ใส่ rationale ของเราแทน เพราะ:
-    //   1. ถ้าครูติ๊กกลับ กฎ checkApprovedMediaReason จะเตือนให้เขียนเหตุผลเอง ซึ่งถูกต้อง
-    //      (แบบฟอร์มขอรับเงินอุดหนุนต้องมีเหตุผลทุกรายการ)
-    //   2. aiReason ต้องหมายถึง "ข้อความที่ AI เขียนจริง" เท่านั้น ไม่งั้น mediaEditRate
-    //      ใน /api/stats จะนับข้อความที่ AI ไม่ได้เขียนเข้าไปด้วย
     ...rest.map((entry) => ({ entry, reason: "", isApproved: false })),
   ];
 }
@@ -136,7 +150,7 @@ async function callLLM(params: {
 
   if (process.env.USE_MOCK === "true" || !apiKey) {
     await new Promise((r) => setTimeout(r, 800)); // จำลอง latency ให้เห็น loading state
-    return buildMockOutput(retrievedMedia, retrievedIndicators);
+    return buildMockOutput(safePayload.abilityLevels, retrievedMedia, retrievedIndicators);
   }
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -148,7 +162,7 @@ async function callLLM(params: {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-5",
-      max_tokens: 2000,
+      max_tokens: 8000,
       system: buildSystemPrompt(),
       messages: [
         {
@@ -175,7 +189,16 @@ async function callLLM(params: {
   const data = await res.json();
   const rawText: string = data.content?.[0]?.text ?? "";
   const cleaned = rawText.replace(/```json|```/g, "").trim();
-
+  
+  // เพิ่มบล็อกนี้เข้าไปใหม่ ก่อน try/catch เดิม
+  if (data.stop_reason === "max_tokens") {
+    console.error(
+      "LLM output ถูกตัดเพราะ max_tokens ไม่พอ — เพิ่มค่า max_tokens ในคำขอ",
+      { outputTokens: data.usage?.output_tokens }
+    );
+    throw new Error("TRUNCATED_OUTPUT");
+  } 
+  
   try {
     return JSON.parse(cleaned) as LLMOutput;
   } catch {
@@ -201,8 +224,6 @@ export async function POST(request: Request) {
     const assessment = await prisma.assessment.create({
       data: {
         studentId: student.id,
-        // cast: AbilityLevels เป็น interface ที่ไม่มี index signature เลยไม่ตรงกับ
-        // InputJsonObject ของ Prisma โดยตรง — โครงสร้างจริงคือ Record<string, string>
         abilityLevels: (body.abilityLevels ?? {}) as Prisma.InputJsonObject,
         strengths: body.strengths?.trim() || null,
       },
@@ -215,8 +236,6 @@ export async function POST(request: Request) {
     );
 
     // ── STEP 2.5: RETRIEVAL — ตัวชี้วัดตามหลักสูตร (ไม่ใช้ AI เช่นกัน) ──
-    // ไม่ระบุวิชา → ดูจาก abilityLevels ให้เอง (reading/writing → ไทย, math → คณิต)
-    // ไม่มีระดับชั้น/ไม่ตรงกลุ่มสาระ → [] แล้วระบบทำงานเหมือนก่อนมีฟีเจอร์นี้ทุกประการ
     const subjects = body.subjects?.length
       ? body.subjects
       : subjectsFromAbilityLevels(body.abilityLevels ?? {});
@@ -226,7 +245,6 @@ export async function POST(request: Request) {
       : [];
 
     // ── STEP 3: GENERATION — LLM เรียบเรียงจากข้อมูลที่ verified แล้ว ──
-    // 🔒 สร้าง payload ผ่าน whitelist เท่านั้น — PII ของ student ไม่มีทางหลุดออกไป
     const safePayload = buildLLMSafePayload({
       disabilityType: student.disabilityType,
       gradeLevel: student.gradeLevel,
@@ -247,35 +265,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: msg }, { status: 502 });
     }
 
-    // ── STEP 4: บันทึกลง DB (เก็บทั้ง aiOriginal และ finalText) ──
+    // ── STEP 4: บันทึกลง DB (เก็บทั้ง aiOriginal/aiXxx และ finalText/finalXxx) ──
+    // ✏️ nested create 2 ชั้น: domainSections → goals
     const plan = await prisma.plan.create({
       data: {
         studentId: student.id,
         assessmentId: assessment.id,
         academicYear: body.academicYear || String(new Date().getFullYear() + 543),
         term: body.term || "1",
-        // ── ส่วนที่ 7: คณะกรรมการจัดทำแผน (ไม่ส่งไป LLM — ใช้ตอน export เท่านั้น) ──
         principalName: body.principalName?.trim() || null,
         responsibleTeacherName: body.responsibleTeacherName?.trim() || null,
         homeroomTeacherName: body.homeroomTeacherName?.trim() || null,
         meetingDate: body.meetingDate?.trim() || null,
-        goals: {
-          create: llm.iepGoals.map((g, i) => {
-            // 🔒 รหัสตัวชี้วัดผ่าน gate เดียวกับสื่อ — ที่ไม่อยู่ใน retrieval ถูกทิ้ง
-            const codes = resolveIndicatorCodes(g.indicatorCodes, retrievedIndicators).map(
-              (ind) => ind.code
-            );
-            return {
-              aiOriginal: g.text,
-              finalText: g.text, // เริ่มต้นเท่ากัน ถ้าครูแก้ finalText จะต่างออกไป
-              criterion: g.criterion ?? null,
-              timeframe: g.timeframe ?? null,
-              aiIndicatorCodes: codes,
-              finalIndicatorCodes: codes, // เริ่มต้นเท่ากันแบบเดียวกับ aiOriginal/finalText
-              isSelected: i === 0, // เลือกข้อแรกไว้ก่อน ครูเปลี่ยนได้
-              orderIndex: i,
-            };
-          }),
+        domainSections: {
+          create: (llm.domainSections ?? []).map((sec, si) => ({
+            domain: sec.domain,
+            aiStrengths: sec.strengths,
+            finalStrengths: sec.strengths,
+            aiDevelopmentAreas: sec.developmentAreas,
+            finalDevelopmentAreas: sec.developmentAreas,
+            aiLongTermGoal: sec.longTermGoal,
+            finalLongTermGoal: sec.longTermGoal,
+            aiEvaluationMethod: sec.evaluationMethod,
+            finalEvaluationMethod: sec.evaluationMethod,
+            // ครูกรอกเองตอนกด "สร้างแผน" — ไม่ระบุ = เว้นว่างให้กรอกทีหลัง
+            responsibleTeacherName:
+              body.responsibleTeacherByDomain?.[sec.domain]?.trim() || null,
+            orderIndex: si,
+            goals: {
+              create: (sec.shortTermObjectives ?? []).map((g, gi) => {
+                // 🔒 รหัสตัวชี้วัดผ่าน gate เดียวกับสื่อ — ที่ไม่อยู่ใน retrieval ถูกทิ้ง
+                const codes = resolveIndicatorCodes(
+                  g.indicatorCodes ?? [],
+                  retrievedIndicators
+                ).map((ind) => ind.code);
+                return {
+                  aiOriginal: g.text,
+                  finalText: g.text,
+                  criterion: g.criterion ?? null,
+                  timeframe: g.timeframe ?? null,
+                  aiIndicatorCodes: codes,
+                  finalIndicatorCodes: codes,
+                  // เลือกข้อแรกของแต่ละ domain ไว้ก่อน ครูเปลี่ยนได้ — ต่างจากเดิมที่เลือก
+                  // ข้อแรกของทั้งแผนแค่ข้อเดียว เพราะตอนนี้แต่ละ domain ต้องมีอย่างน้อย
+                  // 1 เป้าหมายที่ถูกเลือกไว้ล่วงหน้า ไม่งั้น section นั้นจะดูว่างเปล่าตั้งแต่แรก
+                  isSelected: gi === 0,
+                  orderIndex: gi,
+                };
+              }),
+            },
+          })),
         },
         media: {
           create: resolveMediaRecommendations(llm.mediaRecommendations, retrievedMedia).map(
@@ -292,14 +331,9 @@ export async function POST(request: Request) {
           ),
         },
       },
-      include: {
-        student: true,
-        goals: { orderBy: { orderIndex: "asc" } },
-        media: true,
-      },
+      include: INCLUDE,
     });
 
-    // แผนที่เพิ่งสร้างอาจไม่ใช่แผนแรกของปี — ยอดต้องรวมแผนอื่นในปีเดียวกันด้วย
     const annual = await fetchAnnualMediaContext({
       studentId: plan.studentId,
       academicYear: plan.academicYear,
@@ -322,16 +356,9 @@ export async function GET(request: Request) {
     const plans = await prisma.plan.findMany({
       where: studentId ? { studentId } : undefined,
       orderBy: { createdAt: "desc" },
-      include: {
-        student: true,
-        goals: { orderBy: { orderIndex: "asc" } },
-        media: true,
-      },
+      include: INCLUDE,
     });
 
-    // เพดานเงินอุดหนุนนับรวมทั้งปีการศึกษา ไม่ใช่ต่อแผน (ดู lib/serializers.ts)
-    // query ข้างบนโหลดแผน "ทั้งหมด" ที่เข้าเงื่อนไขพร้อม media มาแล้ว จึงคิดยอด
-    // ในหน่วยความจำได้ครบ ไม่ต้อง query เพิ่มต่อแผน (ถ้า query ในลูปจะกลายเป็น N+1)
     const annualByPlan = buildAnnualContextsByPlan(plans);
 
     return NextResponse.json(

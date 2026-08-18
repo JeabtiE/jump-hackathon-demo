@@ -120,23 +120,52 @@ export interface StudentDetail extends StudentPII {
  * POST /api/plans
  * flow: บันทึก assessment → retrieve สื่อจาก mappingTable → เรียก LLM → บันทึกลง DB
  */
+
+// ── 1. แก้ CreatePlanRequest (ตำแหน่งเดิมบรรทัด ~165) ──────────
+// เพิ่ม responsibleTeacherByDomain — ครูกรอกเองต่อ domain ตอนกด "สร้างแผน"
+// (ไม่ใช่ AI คิด ไม่มีข้อมูลให้ AI เดาได้ว่าใครรับผิดชอบ)
+
 export interface CreatePlanRequest {
   studentId: string;
   abilityLevels: AbilityLevels;
   strengths?: string;
-  /** กลุ่มสาระที่ต้องการอ้างตัวชี้วัด — ไม่ระบุ = ระบบดูจาก abilityLevels ให้เอง */
   subjects?: CurriculumSubject[];
-  /**
-   * ระดับหลักสูตรที่ใช้ปรับตัวชี้วัด เช่น "ป.1" — ไม่ระบุ = ใช้ Student.gradeLevel
-   * (เด็กพิเศษมักปรับเป้าหมายจากชั้นที่ต่ำกว่าชั้นที่ลงทะเบียนเรียน)
-   */
   curriculumGrade?: string;
   academicYear: string;
   term: string;
   principalName?: string;
   responsibleTeacherName?: string;
   homeroomTeacherName?: string;
-  meetingDate?: string; // ISO date string เช่น "2025-07-27"
+  meetingDate?: string;
+  /** ผู้รับผิดชอบต่อ domain เช่น { "communication": "ครูสุภาพร เสนนะ" } — ไม่ระบุ = เว้นว่างให้กรอกทีหลัง */
+  responsibleTeacherByDomain?: Record<string, string>;
+}
+
+
+// ── 3. เพิ่มใหม่ทั้งหมด: PlanDomainSectionDTO (วางไว้เหนือ PlanDTO) ──
+
+export interface PlanDomainSectionDTO {
+  id: string;
+  domain: string;
+  /** ข้อความไทยอ่านง่าย แปลจาก domain ผ่าน getDomainLabel() แล้ว — ไม่ต้องแปลซ้ำฝั่ง UI */
+  domainLabel: string;
+
+  aiStrengths: string;
+  finalStrengths: string;
+  aiDevelopmentAreas: string;
+  finalDevelopmentAreas: string;
+  aiLongTermGoal: string;
+  finalLongTermGoal: string;
+  aiEvaluationMethod: string;
+  finalEvaluationMethod: string;
+
+  responsibleTeacherName: string | null;
+
+  /** true ถ้าครูแก้ข้อความใดๆ ใน section นี้จากต้นฉบับ AI (รวม 4 ฟิลด์ aiXxx/finalXxx) */
+  isEdited: boolean;
+
+  /** จุดประสงค์ระยะสั้นทั้งหมดของ domain นี้ */
+  goals: PlanGoalDTO[];
 }
 
 export interface PlanGoalDTO {
@@ -172,10 +201,14 @@ export interface PlanMediaDTO {
   isEdited: boolean;
 }
 
+// ── 4. แก้ PlanDTO (ตำแหน่งเดิมบรรทัด ~217) ────────────────────
+// เปลี่ยน `goals: PlanGoalDTO[]` แบบแบน เป็น `domainSections: PlanDomainSectionDTO[]`
+// ⚠️ นี่คือ breaking change ของ DTO — ทุกที่ที่ frontend เคยเขียน plan.goals.map(...)
+//    ต้องเปลี่ยนเป็น plan.domainSections.flatMap(s => s.goals) หรือ loop ซ้อน 2 ชั้น
+
 export interface PlanDTO {
   id: string;
   studentCode: string;
-  /** ชื่อจริง — ใช้แสดงผลใน UI และ export (ไม่เคยส่งไป LLM) */
   studentFullName: string | null;
   disabilityType: DisabilityType;
   gradeLevel: string | null;
@@ -184,15 +217,15 @@ export interface PlanDTO {
   status: PlanStatus;
   createdAt: string;
   finalizedAt: string | null;
-  /** เวลาที่ใช้ทำแผน (วินาที) — คำนวณจาก createdAt → finalizedAt */
   durationSeconds: number | null;
-  goals: PlanGoalDTO[];
+  /** ✏️ เดิมชื่อ goals: PlanGoalDTO[] — เปลี่ยนเป็น group by domain แล้ว */
+  domainSections: PlanDomainSectionDTO[];
   media: PlanMediaDTO[];
   consistencyWarnings: string[];
   principalName?: string;
   responsibleTeacherName?: string;
   homeroomTeacherName?: string;
-  meetingDate?: string; // ISO date string เช่น "2025-07-27"
+  meetingDate?: string;
 }
 
 // ═════════════════════════════════════════════
@@ -200,21 +233,32 @@ export interface PlanDTO {
 // ═════════════════════════════════════════════
 
 /** PATCH /api/plans/[id] */
+// ── 5. แก้ UpdatePlanRequest (ตำแหน่งเดิมบรรทัด ~245) ──────────
+// ต้องรองรับแก้ระดับ section ด้วย (จุดเด่น/จุดที่ควรพัฒนา/เป้าหมายระยะยาว/
+// วิธีประเมิน/ผู้รับผิดชอบ) ไม่ใช่แค่ระดับ goal เหมือนเดิม
+
 export interface UpdatePlanRequest {
+  /** ✏️ ใหม่ — แก้ข้อมูลระดับ domain section */
+  domainSections?: {
+    id: string;
+    finalStrengths?: string;
+    finalDevelopmentAreas?: string;
+    finalLongTermGoal?: string;
+    finalEvaluationMethod?: string;
+    responsibleTeacherName?: string;
+  }[];
   goals?: {
     id: string;
     finalText?: string;
     isSelected?: boolean;
-    /** รหัสที่ไม่มีอยู่จริงในหลักสูตรจะถูกทิ้ง (ข้ามชั้นได้ — ครูตัดสินใจเอง) */
     finalIndicatorCodes?: string[];
   }[];
   media?: { id: string; finalReason?: string; isApproved?: boolean }[];
-  /** ตั้งเป็น "finalized" เมื่อครูกดยืนยัน → ระบบบันทึก finalizedAt ให้ */
   status?: PlanStatus;
   principalName?: string;
   responsibleTeacherName?: string;
   homeroomTeacherName?: string;
-  meetingDate?: string; // ISO date string เช่น "2025-07-27"
+  meetingDate?: string;
 }
 
 // ═════════════════════════════════════════════
@@ -276,43 +320,41 @@ export interface IndicatorEntry {
 // INTERNAL: สิ่งที่ LLM ต้องคืนมา
 // ═════════════════════════════════════════════
 
+// ── 6. แก้ LLMOutput (ตำแหน่งเดิมบรรทัด ~318) ──────────────────
+// เปลี่ยนจาก iepGoals แบน เป็น domainSections ที่มี goals ซ้อนข้างใน
+// mediaRecommendations ไม่แตะเลย เหมือนเดิมทุกประการ
+
 export interface LLMOutput {
   /**
-   * ⚠️ indicatorCodes ที่ LLM คืนมาใช้แค่ "จับคู่กลับ" ไปหาตัวชี้วัดที่ retrieve มา
-   *    รหัสที่ไม่อยู่ในรายการที่ส่งไปให้จะถูกทิ้ง (ดู resolveIndicatorCodes)
-   */
-  iepGoals: {
-    text: string;
-    criterion: string;
-    timeframe: string;
-    indicatorCodes?: string[];
-  }[];
-  /**
-   * ⚠️ code/item/category ที่ LLM คืนมาใช้แค่ "จับคู่กลับ" ไปหารายการที่ retrieve มา
-   *    ไม่ใช่แหล่งความจริง — รหัส/บัญชี/ราคา/วิธีการ ยึดจาก mappingTable เท่านั้น
-   *    รายการที่จับคู่ไม่ได้จะถูกทิ้ง (ดู app/api/plans/route.ts)
+   * ✏️ 17 ส.ค. 2569 — เปลี่ยนจาก iepGoals แบน เป็น group by domain ให้ตรงกับ
+   *    โครงสร้างเอกสารจริง (1 domain = จุดเด่น + จุดที่ควรพัฒนา + เป้าหมายระยะยาว
+   *    1 ก้อน + จุดประสงค์ระยะสั้นหลายข้อ + วิธีประเมิน 1 ก้อน)
    *
-   * 🔑 ตั้งแต่ 8 ส.ค. 2569 LLM "เลือกไม่ครบ" ได้ — คืนเฉพาะรายการที่สนับสนุนเป้าหมายในแผนนี้
-   *    รายการที่เหลือระบบยังบันทึกไว้ทั้งหมด แต่ตั้ง isApproved = false ให้ครูติ๊กกลับเองได้
-   *    (ยังคงเลือกได้เฉพาะจากรายการที่ retrieve มาเท่านั้น — คิดรหัสเองไม่ได้ CLAUDE.md §4)
+   * ⚠️ domain ที่ AI คืนมาต้องตรงกับ key ใน abilityLevels ที่ส่งไปเป๊ะ (เช่น
+   *    "communication", "math") — ไม่ตรง = ระบบจับคู่ label ไม่ได้ ต้อง fallback
    */
+  domainSections: {
+    domain: string;
+    strengths: string;
+    developmentAreas: string;
+    longTermGoal: string;
+    evaluationMethod: string;
+    shortTermObjectives: {
+      text: string;
+      criterion: string;
+      timeframe: string;
+      indicatorCodes?: string[];
+    }[];
+  }[];
   mediaRecommendations: {
     code?: string;
     item: string;
     category?: MediaCategory;
     reason: string;
-    /**
-     * เป้าหมายที่สื่อชิ้นนี้สนับสนุน เช่น "goal_1" — เป็นแค่ "คำใบ้" ไม่ใช่ข้อบังคับ
-     *
-     * ⚠️ ห้ามเขียน validation ที่บังคับว่าสื่อทุกชิ้นต้องผูกกับเป้าหมายข้อใดข้อหนึ่ง
-     *    แผนจริงมีรายการที่ไม่ผูกกับเป้าหมายใดเลยเป็นเรื่องปกติ (กาว พลาสติกเคลือบ
-     *    กระดาษโปสเตอร์ = วัสดุสำหรับผลิตสื่ออื่น) และครูเขียน "เหตุผลและความจำเป็น"
-     *    เป็นข้อความรวมของทั้งคำขอ ไม่ได้เขียนแยกทีละคู่เป้าหมาย-สื่อ
-     *    (ดู data/goalMediaPairs.json _keyFindings ข้อ 1 และ 2)
-     */
     goalRef?: string;
   }[];
 }
+
 
 export interface ErrorResponse {
   error: string;

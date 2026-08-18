@@ -2,11 +2,16 @@
  * แปลง Prisma model → DTO ที่ส่งให้ frontend
  * รวม logic การคำนวณ isEdited, durationSeconds และ consistency warnings ไว้ที่เดียว
  *
+ * ✏️ 17 ส.ค. 2569 — เปลี่ยนจาก plan.goals (แบน) เป็น plan.domainSections[].goals
+ *    (ซ้อน) ทุกฟังก์ชันกฎ (checkXxx) ยังรับ "goals: GoalRecord[]" แบบเดิม —
+ *    caller เป็นคน flatten จาก domainSections ก่อนส่งเข้าไป ไม่ต้องแก้ตัวกฎเอง
+ *
  * ⚠️ consistency warnings เป็น rule-based ล้วน (ห้ามใช้ LLM ตัดสิน)
  *    และเป็นการ "flag เท่านั้น" — ระบบไม่แก้ให้เอง ครูตัดสินใจ (CLAUDE.md §4)
  */
 
-import type { PlanDTO } from "./types";
+import type { PlanDTO, PlanDomainSectionDTO } from "./types";
+import { getDomainLabel } from "./ability-options";
 
 type GoalRecord = {
   id: string;
@@ -17,6 +22,21 @@ type GoalRecord = {
   aiIndicatorCodes: string[];
   finalIndicatorCodes: string[];
   isSelected: boolean;
+};
+
+type DomainSectionRecord = {
+  id: string;
+  domain: string;
+  aiStrengths: string;
+  finalStrengths: string;
+  aiDevelopmentAreas: string;
+  finalDevelopmentAreas: string;
+  aiLongTermGoal: string;
+  finalLongTermGoal: string;
+  aiEvaluationMethod: string;
+  finalEvaluationMethod: string;
+  responsibleTeacherName: string | null;
+  goals: GoalRecord[];
 };
 
 type MediaRecord = {
@@ -48,12 +68,14 @@ type PlanWithRelations = {
     disabilityType: string;
     gradeLevel: string | null;
   };
-  goals: GoalRecord[];
+  domainSections: DomainSectionRecord[];
   media: MediaRecord[];
 };
 
 // ═════════════════════════════════════════════
 // CONSISTENCY RULES — rule-based ล้วน ไม่มี LLM
+// ⚠️ ทุกฟังก์ชันข้างล่างรับ "goals: GoalRecord[]" แบบแบนเหมือนเดิมทุกประการ —
+//    ไม่แตะเลย เพราะกฎไม่สนใจว่า goal อยู่ domain ไหน สนใจแค่เนื้อหาของ goal เอง
 // ═════════════════════════════════════════════
 
 /** ปีหลักสูตรที่อ้างถึงในเอกสารได้โดยไม่ใช่ปีของแผน เช่น "หลักสูตรแกนกลาง พ.ศ. 2551" */
@@ -240,20 +262,7 @@ function checkYearMismatch(goals: GoalRecord[], academicYear: string): string[] 
 
 /**
  * กฎ 1.5 (ร้ายแรงรองจากปีผิด): ยอดสื่อที่อนุมัติ "รวมทั้งปีการศึกษา" เกิน 2,000 บาท/คน/ปี
- *
- * อยู่สูงเพราะเป็น "กฎแข็ง" ของระบบต้นทาง ไม่ใช่ดุลยพินิจ — ยอดเกินแล้วระบบ
- * IEP Online เตือนและเบิกไม่ผ่าน ครูต้องรู้ก่อนพิมพ์เอกสารให้คณะกรรมการเซ็น
- *
- * ⚠️ นับรวมทุกแผนของนักเรียนคนนี้ในปีการศึกษาเดียวกัน ไม่ใช่แค่แผนนี้แผนเดียว
- *    (ดูเหตุผลที่ MEDIA_BUDGET_CAP_BAHT) ยอดของแผนอื่นมาทาง annual ซึ่ง route
- *    เป็นคนหามาให้ ค่าเริ่มต้นคือ 0 = ไม่มีแผนอื่น
- *
- * แต่ยังใช้โทนคำถามตาม CLAUDE.md §4 — ระบบไม่ตัดรายการให้เอง
- * เพราะ "ตัดอันไหนออก" เป็นการตัดสินใจเชิงวิชาชีพของครู ไม่ใช่ของระบบ
- * และคณะกรรมการยกเว้นเพดานได้ จึงเป็น warning ไม่ใช่ block
- *
- * รายการที่ price = null ไม่นับเข้ายอด (บัญชี ก / ขอยืม = ไม่ได้ขอเงินอุดหนุน)
- * แต่บอกจำนวนไว้ในข้อความ ครูจะได้รู้ว่ายอดนี้ยังไม่ครบทุกรายการ
+ * (คงเดิมทุกประการจากเวอร์ชันก่อน — ไม่เกี่ยวกับการเปลี่ยนโครงสร้าง goals)
  */
 function checkMediaBudgetCap(
   media: MediaRecord[],
@@ -267,7 +276,6 @@ function checkMediaBudgetCap(
   const note =
     uncounted > 0 ? ` (ยังไม่รวมอีก ${uncounted} รายการที่ไม่มีราคา เช่น บัญชี ก / ขอยืม)` : "";
 
-  // มีแผนอื่นในปีเดียวกัน → บอกที่มาของยอดให้ครูตรวจได้ว่ามาจากไหนบ้าง
   const scope =
     annual.otherPlanCount > 0
       ? `รวมราคาสื่อที่อนุมัติแล้วทั้งปีการศึกษา ${formatBaht(total)} บาท ` +
@@ -330,16 +338,13 @@ function checkGoalCompleteness(goals: GoalRecord[]): string[] {
   return warnings;
 }
 
-/** กฎเดิม: ยังไม่ได้เลือกเป้าหมายที่จะใช้จริง */
+/** กฎเดิม: ยังไม่ได้เลือกเป้าหมายที่จะใช้จริง (ตรวจรวมทุก domain) */
 function checkGoalSelected(goals: GoalRecord[]): string[] {
   return goals.some((g) => g.isSelected) ? [] : ["ยังไม่ได้เลือกเป้าหมายที่จะใช้จริง"];
 }
 
 /**
  * กฎเดิม (ไม่มีสื่อเลย) + กฎใหม่ (เลือกเป้าหมายแล้วแต่สื่อถูกเอาออกจากการเบิกหมด)
- * isApproved default = true โดยตั้งใจ (ดู CLAUDE.md §6) — สื่อมาจาก retrieval
- * ที่ verified แล้วจึงเสนอแบบพร้อมเบิก กฎนี้จึง fire เฉพาะตอนครูเอาออกเอง
- * ครบทุกรายการ = การกระทำที่ตั้งใจ → โทนคำถามยืนยัน ไม่ใช่โทน "ลืมทำ"
  */
 function checkMediaApproval(goals: GoalRecord[], media: MediaRecord[]): string[] {
   if (media.length === 0) {
@@ -353,13 +358,7 @@ function checkMediaApproval(goals: GoalRecord[], media: MediaRecord[]): string[]
   return [];
 }
 
-/**
- * กฎ 5 (เบาสุด — โทนคำถาม ไม่ใช่โทนผิดพลาด):
- * เกณฑ์วัดผลไม่มีตัวเลขทั้งใน criterion และ finalText
- * เป้าหมายเชิงคุณภาพบางแบบถูกต้องโดยไม่มีตัวเลข (เช่น "ลดความช่วยเหลือ...น้อยลง")
- * จึงตั้งเป็นคำถามให้ครูทบทวน ไม่ใช่บอกว่าผิด
- * ข้าม goal ที่ criterion เป็น null — กฎเดิม (ยังไม่มีเกณฑ์วัดผล) ครอบคลุมอยู่แล้ว
- */
+/** กฎ 5 (เบาสุด — โทนคำถาม ไม่ใช่โทนผิดพลาด): เกณฑ์วัดผลไม่มีตัวเลข */
 function checkMeasurableCriterion(goals: GoalRecord[]): string[] {
   const warnings: string[] = [];
   for (const g of goals) {
@@ -374,27 +373,82 @@ function checkMeasurableCriterion(goals: GoalRecord[]): string[] {
 }
 
 /**
+ * กฎ 6 (ใหม่ — ต่ำสุด โทนคำถาม): domain section มี domainLabel แต่ไม่มีเป้าหมายระยะสั้น
+ * ที่ถูกเลือกใช้จริงเลยสักข้อ — section ที่ AI ร่างมาแต่ครูไม่ได้เลือกอะไรจาก section นั้น
+ * มักหมายความว่า section นี้ไม่เกี่ยวกับแผนจริง ควรทบทวนว่าจะตัดออกทั้ง section ไหม
+ * (แยกจากกฎ checkGoalSelected ซึ่งมองภาพรวมทั้งแผน — กฎนี้มองทีละ section)
+ */
+function checkEmptyDomainSections(sections: DomainSectionRecord[]): string[] {
+  const empty = sections.filter((s) => s.goals.length > 0 && !s.goals.some((g) => g.isSelected));
+  if (empty.length === 0) return [];
+  const label = (s: DomainSectionRecord) => getDomainLabel("", s.domain); // fallback label เฉยๆ ไม่พึ่ง disabilityType
+  return empty.map(
+    (s) => `ด้าน "${s.domain}" ยังไม่ได้เลือกเป้าหมายระยะสั้นข้อไหนเลย — ถ้าไม่เกี่ยวกับแผนนี้ พิจารณาตัด section นี้ออกจากเอกสาร export`
+  );
+}
+
+/**
  * รวม warning ทุกกฎ เรียงจากร้ายแรงสุด → เบาสุด (ครูอ่านจากบนลงล่าง)
  * export ไว้ให้ scripts/test-warnings.mjs ทดสอบตรงได้โดยไม่ต้องเปิด server
  *
- * annual = ยอดสื่อของแผนอื่นในปีการศึกษาเดียวกัน (route เป็นคนหามาให้)
- * ไม่ส่งมา = ไม่มีแผนอื่น → ผลลัพธ์เท่าเดิมทุกประการ
+ * ✏️ รับ plan.domainSections แทน plan.goals — flatten เป็น goals แบนก่อนส่งเข้ากฎเดิม
  */
 export function buildConsistencyWarnings(
-  plan: Pick<PlanWithRelations, "academicYear" | "goals" | "media">,
+  plan: Pick<PlanWithRelations, "academicYear" | "domainSections" | "media">,
   annual: AnnualMediaContext = EMPTY_ANNUAL
 ): string[] {
+  const goals = plan.domainSections.flatMap((s) => s.goals);
   return [
-    ...checkYearMismatch(plan.goals, plan.academicYear),
+    ...checkYearMismatch(goals, plan.academicYear),
     ...checkMediaBudgetCap(plan.media, annual),
     ...checkApprovedMediaReason(plan.media),
     ...checkMediaCode(plan.media),
-    ...checkChildNameInGoals(plan.goals),
-    ...checkGoalCompleteness(plan.goals),
-    ...checkGoalSelected(plan.goals),
-    ...checkMediaApproval(plan.goals, plan.media),
-    ...checkMeasurableCriterion(plan.goals),
+    ...checkChildNameInGoals(goals),
+    ...checkGoalCompleteness(goals),
+    ...checkGoalSelected(goals),
+    ...checkMediaApproval(goals, plan.media),
+    ...checkMeasurableCriterion(goals),
+    ...checkEmptyDomainSections(plan.domainSections),
   ];
+}
+
+function toDomainSectionDTO(
+  s: DomainSectionRecord,
+  disabilityType: string
+): PlanDomainSectionDTO {
+  const isEdited =
+    s.aiStrengths.trim() !== s.finalStrengths.trim() ||
+    s.aiDevelopmentAreas.trim() !== s.finalDevelopmentAreas.trim() ||
+    s.aiLongTermGoal.trim() !== s.finalLongTermGoal.trim() ||
+    s.aiEvaluationMethod.trim() !== s.finalEvaluationMethod.trim();
+
+  return {
+    id: s.id,
+    domain: s.domain,
+    domainLabel: getDomainLabel(disabilityType, s.domain),
+    aiStrengths: s.aiStrengths,
+    finalStrengths: s.finalStrengths,
+    aiDevelopmentAreas: s.aiDevelopmentAreas,
+    finalDevelopmentAreas: s.finalDevelopmentAreas,
+    aiLongTermGoal: s.aiLongTermGoal,
+    finalLongTermGoal: s.finalLongTermGoal,
+    aiEvaluationMethod: s.aiEvaluationMethod,
+    finalEvaluationMethod: s.finalEvaluationMethod,
+    responsibleTeacherName: s.responsibleTeacherName,
+    isEdited,
+    goals: s.goals.map((g) => ({
+      id: g.id,
+      aiOriginal: g.aiOriginal,
+      finalText: g.finalText,
+      criterion: g.criterion,
+      timeframe: g.timeframe,
+      // ?? [] — กันข้อมูลเก่าที่ dump มาจากที่อื่น (Prisma ปกติคืน [] อยู่แล้ว)
+      aiIndicatorCodes: g.aiIndicatorCodes ?? [],
+      finalIndicatorCodes: g.finalIndicatorCodes ?? [],
+      isSelected: g.isSelected,
+      isEdited: g.aiOriginal.trim() !== g.finalText.trim(),
+    })),
+  };
 }
 
 export function toPlanDTO(
@@ -419,23 +473,13 @@ export function toPlanDTO(
     createdAt: plan.createdAt.toISOString(),
     finalizedAt: plan.finalizedAt?.toISOString() ?? null,
     durationSeconds,
-    // DTO ประกาศเป็น optional (string | undefined) แต่ Prisma คืน null → แปลงให้ตรงกัน
     principalName: plan.principalName ?? undefined,
     responsibleTeacherName: plan.responsibleTeacherName ?? undefined,
     homeroomTeacherName: plan.homeroomTeacherName ?? undefined,
     meetingDate: plan.meetingDate ?? undefined,
-    goals: plan.goals.map((g) => ({
-      id: g.id,
-      aiOriginal: g.aiOriginal,
-      finalText: g.finalText,
-      criterion: g.criterion,
-      timeframe: g.timeframe,
-      // ?? [] — แผนที่สร้างก่อนมีฟีเจอร์นี้ไม่มีค่า (Prisma คืน [] อยู่แล้ว แต่กันข้อมูลเก่าที่ dump มาจากที่อื่น)
-      aiIndicatorCodes: g.aiIndicatorCodes ?? [],
-      finalIndicatorCodes: g.finalIndicatorCodes ?? [],
-      isSelected: g.isSelected,
-      isEdited: g.aiOriginal.trim() !== g.finalText.trim(),
-    })),
+    domainSections: plan.domainSections.map((s) =>
+      toDomainSectionDTO(s, plan.student.disabilityType)
+    ),
     media: plan.media.map((m) => ({
       id: m.id,
       code: m.code,
