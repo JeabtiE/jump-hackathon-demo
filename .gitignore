@@ -44,3 +44,5 @@ yarn-error.log*
 
 # prisma
 /prisma/migrations/dev.db*
+fetch_all_branches.bat 
+mailmap.txt 

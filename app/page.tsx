@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import StudentPicker from "@/components/StudentPicker";
 import AssessmentForm from "@/components/AssessmentForm";
-import PlanEditor from "@/components/PlanEditor";
+import PlanReview from "@/components/PlanReview";
 import type { AbilityLevels, PlanDTO, StudentSummary } from "@/lib/types";
 
 export default function Home() {
@@ -153,7 +153,7 @@ export default function Home() {
             </div>
           )}
 
-          {!loading && plan && <PlanEditor plan={plan} onChange={setPlan} />}
+          {!loading && plan && <PlanReview planId={plan.id} />}
         </section>
       </div>
 

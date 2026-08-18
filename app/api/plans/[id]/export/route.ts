@@ -11,10 +11,14 @@
  *    - ข้อความเป้าหมายที่ AI เขียนว่า "นักเรียน" ถูกแทนที่ด้วยชื่อจริงตรงนี้
  *    LLM ไม่เคยเห็นชื่อเด็กเลยตลอดกระบวนการ
  *
- * ✏️ 12 ส.ค. 2569 — ส่วนที่ 5 (เป้าหมาย/จุดประสงค์เชิงพฤติกรรม) เปลี่ยนจากความเรียง
- *    เป็นตาราง ให้สไตล์เดียวกับตารางส่วนที่ 6 คอลัมน์: ที่ / จุดประสงค์เชิงพฤติกรรม /
- *    เกณฑ์การประเมิน / ระยะเวลา / ตัวชี้วัดที่ปรับ — ใช้ข้อมูลเดิมที่มีอยู่แล้วบน
- *    PlanGoal (finalText, criterion, timeframe, finalIndicatorCodes) ไม่ต้องแก้ schema
+ * ✏️ 17 ส.ค. 2569 — ส่วนที่ 5 เปลี่ยนจากตารางแบนเดียว (คอลัมน์ ที่/จุดประสงค์/เกณฑ์/
+ *    ระยะเวลา/ตัวชี้วัด) เป็นตาราง merged-cell ต่อ domain:
+ *      คอลัมน์ 1 (ด้าน + จุดเด่น + จุดที่ควรพัฒนา + เป้าหมายระยะยาว + วิธีประเมิน +
+ *                ผู้รับผิดชอบ) → rowSpan ครอบทุกแถวเป้าหมายระยะสั้นของ domain นั้น
+ *      คอลัมน์ 2-5 (ที่ / จุดประสงค์เชิงพฤติกรรม / เกณฑ์ / ระยะเวลา / ตัวชี้วัด)
+ *                → 1 แถวต่อ 1 เป้าหมายระยะสั้นที่เลือกไว้
+ *    docx library แทรกแถว continuation ของ rowSpan ให้เองอัตโนมัติ — ห้ามใส่ cell
+ *    ว่างเติมมือในแถวถัดไปของคอลัมน์ 1 ไม่งั้นจะกลายเป็นสลับ column
  */
 
 import { NextResponse } from "next/server";
@@ -30,10 +34,12 @@ import {
   TableCell,
   WidthType,
   PageOrientation,
+  VerticalAlign,
 } from "docx";
 import { prisma } from "@/lib/db";
 import { lookupIndicators } from "@/lib/curriculum-retrieval";
 import { personalizeForExport } from "@/lib/pii-guard";
+import { getDomainLabel } from "@/lib/ability-options";
 
 const DISABILITY_LABEL: Record<string, string> = {
   visual: "บกพร่องทางการเห็น",
@@ -53,21 +59,13 @@ const BLANK = "..............................";
 /**
  * ขนาดตัวอักษร หน่วยเป็น "ครึ่งพอยต์" (half-points) ตาม TextRun.size ของ docx
  * ⚠️ ไม่ใช่พอยต์ — 16pt ต้องเขียน 32 ถ้าเขียน 16 จะได้ 8pt (เล็กจนอ่านไม่ออก)
- *
- * ทั้งเอกสารใช้ขนาดเดียวคือ 16pt ยกเว้นชื่อเอกสารบนสุด
- * หัวข้อส่วนที่ 1-8 แยกจากเนื้อหาด้วย bold ไม่ใช่ด้วยขนาด — ตั้งใจให้เป็นแบบนี้
  */
 const BODY_SIZE = 32; // 16pt — เนื้อหาทั้งหมด รวมหัวข้อและช่องในตาราง
 const TITLE_SIZE = 40; // 20pt — ชื่อเอกสารทั้งฉบับเท่านั้น
 
 /**
  * ขนาด A4 หน่วย twips — เป็น "ฐานแนวตั้ง" เสมอ
- *
- * ⚠️ ห้ามสลับ width/height เองเมื่อจะทำหน้าแนวนอน
- *    PageSize ของ docx สลับให้อัตโนมัติแล้วเมื่อ orientation = LANDSCAPE
- *    (node_modules/docx/build/index.mjs → `const flip = orientation === LANDSCAPE`)
- *    ถ้าสลับเองด้วยจะกลายเป็นสลับสองรอบ = ได้ขนาดแนวตั้งกลับมา
- *    แต่ติดแท็ก orient="landscape" ไว้ → Word/LibreOffice เรนเดอร์ผิดแบบเงียบๆ
+ * ⚠️ ห้ามสลับ width/height เองเมื่อจะทำหน้าแนวนอน — docx สลับให้อัตโนมัติแล้ว
  */
 const A4 = { width: 11906, height: 16838 };
 const PORTRAIT_PAGE = { page: { size: { ...A4, orientation: PageOrientation.PORTRAIT } } };
@@ -86,7 +84,6 @@ const THAI_MONTHS = [
 /**
  * ตัวแปลงกลาง: "2018-10-05" → "5 ตุลาคม 2561" (พ.ศ.)
  * แยกสตริงตรงๆ ไม่ผ่าน new Date() เพราะ Date จะตีความเป็น UTC แล้ววันเพี้ยนใน +07:00
- * parse ไม่ได้ → คืน null ให้ผู้เรียกตัดสินใจ fallback เอง
  */
 function thaiDate(iso?: string | null): string | null {
   const m = iso?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -99,19 +96,10 @@ function thaiDate(iso?: string | null): string | null {
   return `${Number(dd)} ${monthName} ${Number(y) + 543}`;
 }
 
-/**
- * วันเกิดในส่วนที่ 1: แปลงเป็นไทยถ้าเป็นรูปแบบ ISO จาก date picker
- * parse ไม่ได้ → พิมพ์ค่าเดิมออกไป (นักเรียนเก่าเก็บเป็นข้อความอิสระ เช่น "5 ต.ค. 2561"
- * ข้อมูลของครูต้องไม่หาย — ห้าม fallback เป็น BLANK)
- */
 function birthDateText(iso?: string | null): string {
   return thaiDate(iso) ?? val(iso);
 }
 
-/**
- * "2026-07-27" → "ประชุมวันที่ 27 เดือน กรกฎาคม พ.ศ. 2569"
- * ไม่มีค่า/รูปแบบไม่ถูกต้อง → คืนบรรทัดเว้นว่างให้ครูกรอกมือเหมือนเดิม
- */
 function thaiMeetingDateLine(iso?: string | null): string {
   const converted = thaiDate(iso);
   if (!converted) return `ประชุมวันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`;
@@ -124,7 +112,6 @@ function heading(text: string) {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 280, after: 120 },
-    // bold คือสิ่งเดียวที่แยกหัวข้อออกจากเนื้อหา (ขนาดเท่ากัน) — ห้ามถอด
     children: [new TextRun({ text, bold: true, size: BODY_SIZE, font: FONT })],
   });
 }
@@ -140,20 +127,10 @@ function body(text: string, opts: { indent?: boolean; italics?: boolean } = {}) 
 /** เส้นให้กรอกมือแบบสั้น — BLANK ปกติยาวเกินสำหรับช่องในตาราง */
 const CELL_BLANK = "..........";
 
-/**
- * ช่อง "ผู้จัดหา / วิธีการ" ของส่วนที่ 6
- * - วิธีการ: เติมจากคู่มือ 2568 (ขอรับ / ขอยืม / รับบริการ)
- * - ผู้จัดหา: ระบบไม่เก็บ (ผู้ปกครอง / สถานศึกษา / สถานพยาบาล) → เว้นให้ครูกรอก
- */
 function supplyCellText(mode?: string | null): string {
   return `${CELL_BLANK} / ${mode?.trim() || CELL_BLANK}`;
 }
 
-/**
- * ช่อง "จำนวนเงินที่ขออุดหนุน" — ราคาตามคู่มือ
- * บัญชี ก เป็นการขอยืมครุภัณฑ์ ไม่มีราคาและไม่ขอเงินอุดหนุน → ระบุให้ชัดแทนเว้นว่าง
- * เพื่อไม่ให้ดูเหมือนระบบลืมกรอก
- */
 function amountCellText(m: { price: string | null; mode: string | null }): string {
   if (m.price?.trim()) return m.price.trim();
   return m.mode === "ขอยืม" ? "— (ขอยืม)" : CELL_BLANK;
@@ -177,12 +154,60 @@ function indicatorReferenceBlock(codes: string[]) {
   ];
 }
 
-function cell(text: string, opts: { bold?: boolean } = {}) {
+function cell(
+  text: string,
+  opts: { bold?: boolean; rowSpan?: number; width?: number } = {}
+) {
   return new TableCell({
+    rowSpan: opts.rowSpan,
+    width: opts.width ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
+    verticalAlign: VerticalAlign.TOP,
     children: [
       new Paragraph({
         children: [new TextRun({ text, size: BODY_SIZE, font: FONT, bold: opts.bold })],
       }),
+    ],
+  });
+}
+
+/**
+ * คอลัมน์ 1 ของตารางส่วนที่ 5 — สรุปทั้ง domain ในเซลล์เดียว (multi-paragraph)
+ * ใช้ rowSpan ครอบทุกแถวเป้าหมายระยะสั้นของ domain นี้
+ */
+function domainSummaryCell(
+  section: {
+    domainLabel: string;
+    finalStrengths: string;
+    finalDevelopmentAreas: string;
+    finalLongTermGoal: string;
+    finalEvaluationMethod: string;
+    responsibleTeacherName: string | null;
+  },
+  rowSpan: number
+) {
+  const line = (label: string, text: string) =>
+    new Paragraph({
+      spacing: { after: 80 },
+      children: [
+        new TextRun({ text: `${label}: `, bold: true, size: BODY_SIZE, font: FONT }),
+        new TextRun({ text, size: BODY_SIZE, font: FONT }),
+      ],
+    });
+
+  return new TableCell({
+    rowSpan,
+    width: { size: 22, type: WidthType.PERCENTAGE },
+    verticalAlign: VerticalAlign.TOP,
+    children: [
+      new Paragraph({
+        spacing: { after: 100 },
+        children: [new TextRun({ text: section.domainLabel, bold: true, size: BODY_SIZE, font: FONT })],
+      }),
+      line("จุดเด่น", section.finalStrengths || CELL_BLANK),
+      line("จุดที่ควรพัฒนา", section.finalDevelopmentAreas || CELL_BLANK),
+      line("เป้าหมายระยะยาว 1 ปี", section.finalLongTermGoal || CELL_BLANK),
+      line("วิธีประเมินผล", section.finalEvaluationMethod || CELL_BLANK),
+      line("ผู้รับผิดชอบ", section.responsibleTeacherName?.trim() || CELL_BLANK),
     ],
   });
 }
@@ -194,7 +219,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       include: {
         student: true,
         assessment: true,
-        goals: { orderBy: { orderIndex: "asc" } },
+        domainSections: {
+          orderBy: { orderIndex: "asc" },
+          include: { goals: { orderBy: { orderIndex: "asc" } } },
+        },
         media: true,
       },
     });
@@ -202,9 +230,23 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     if (!plan) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
 
     const s = plan.student;
-    const selectedGoals = plan.goals.filter((g) => g.isSelected);
     const approvedMedia = plan.media.filter((m) => m.isApproved);
     const abilityLevels = (plan.assessment.abilityLevels as Record<string, string>) ?? {};
+
+    // เฉพาะ domain ที่มีเป้าหมายระยะสั้นถูกเลือกไว้จริงอย่างน้อย 1 ข้อ — section ที่
+    // AI ร่างมาแต่ครูไม่เลือกอะไรเลยไม่ต้องขึ้นในเอกสาร (เอกสารจริงไม่มีแถวว่างเปล่า)
+    const sectionsWithSelectedGoals = plan.domainSections
+      .map((sec) => ({
+        ...sec,
+        domainLabel: getDomainLabel(s.disabilityType, sec.domain),
+        selectedGoals: sec.goals.filter((g) => g.isSelected),
+      }))
+      .filter((sec) => sec.selectedGoals.length > 0);
+
+    // รวมรหัสตัวชี้วัดของเป้าหมายที่เลือกไว้ทั้งหมด (ข้าม domain) ไม่ซ้ำ — ใช้ต่อท้ายตาราง
+    const allSelectedIndicatorCodes = sectionsWithSelectedGoals.flatMap((sec) =>
+      sec.selectedGoals.flatMap((g) => g.finalIndicatorCodes)
+    );
 
     /**
      * เอกสารจริงแบ่งเป็น 3 ส่วนที่วางหน้ากระดาษต่างกัน
@@ -219,7 +261,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         {
           properties: PORTRAIT_PAGE,
           children: [
-            // ── หัวเอกสาร ──
             new Paragraph({
               alignment: AlignmentType.CENTER,
               spacing: { after: 80 },
@@ -250,7 +291,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             ),
             body(`ปีการศึกษา ${plan.academicYear}   ภาคเรียนที่ ${plan.term}`),
 
-            // ── ส่วนที่ 1: ข้อมูลทั่วไป ──
             heading("1. ข้อมูลทั่วไป"),
             body(`ชื่อ-ชื่อสกุล  ${val(s.fullName)}`),
             body(`เลขประจำตัวประชาชน  ${val(s.nationalId)}`),
@@ -267,15 +307,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             body(`ที่อยู่ผู้ปกครองที่ติดต่อได้  ${val(s.address)}`),
             body(`โทรศัพท์  ${val(s.phone)}`),
 
-            // ── ส่วนที่ 2: ข้อมูลด้านการแพทย์ ──
             heading("2. ข้อมูลด้านการแพทย์ หรือด้านสุขภาพ"),
             body(val(s.medicalNote)),
 
-            // ── ส่วนที่ 3: ข้อมูลด้านการศึกษา ──
             heading("3. ข้อมูลด้านการศึกษา"),
             body(val(s.educationHistory)),
 
-            // ── ส่วนที่ 4: ข้อมูลอื่นๆ ──
             heading("4. ข้อมูลอื่นๆ ที่จำเป็น"),
             body(val(plan.assessment.strengths ?? s.note)),
           ],
@@ -285,59 +322,60 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         {
           properties: LANDSCAPE_PAGE,
           children: [
-            // ── ส่วนที่ 5: แนวทางการศึกษาและการวางแผน ──
             heading("5. การกำหนดแนวทางการศึกษาและการวางแผนการจัดการศึกษาพิเศษ"),
 
             body("ระดับความสามารถในปัจจุบัน", { italics: true }),
             ...(Object.entries(abilityLevels).filter(([, v]) => v).length > 0
               ? Object.entries(abilityLevels)
                   .filter(([, v]) => v)
-                  .map(([domain, level]) => body(`• ${domain}: ${level}`, { indent: true }))
+                  .map(([domain, level]) =>
+                    body(`• ${getDomainLabel(s.disabilityType, domain)}: ${level}`, { indent: true })
+                  )
               : [body("(ไม่ได้ระบุ)", { indent: true })]),
 
             new Paragraph({ spacing: { before: 200 } }),
-            body("เป้าหมายระยะยาว 1 ปี และจุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น)", {
+            body("จุดเด่น จุดที่ควรพัฒนา เป้าหมายระยะยาว และจุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น) แยกตามด้าน", {
               italics: true,
             }),
-            // ✏️ 12 ส.ค. 2569 — เปลี่ยนจากรายการความเรียงเป็นตาราง สไตล์เดียวกับส่วนที่ 6
-            //    คอลัมน์ตรงกับข้อมูลที่มีอยู่แล้วบน PlanGoal เป๊ะๆ ไม่ได้เพิ่ม field ใหม่
-            ...(selectedGoals.length > 0
+            // ✏️ 17 ส.ค. 2569 — ตาราง merged-cell ต่อ domain แทนตารางแบนเดียว
+            ...(sectionsWithSelectedGoals.length > 0
               ? [
                   new Table({
                     width: { size: 100, type: WidthType.PERCENTAGE },
                     rows: [
                       new TableRow({
                         children: [
-                          cell("ที่", { bold: true }),
-                          cell("จุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น)", { bold: true }),
-                          cell("เกณฑ์การประเมิน", { bold: true }),
-                          cell("ระยะเวลา", { bold: true }),
-                          cell("ตัวชี้วัดที่ปรับ", { bold: true }),
+                          cell("ด้าน / ข้อมูลภาพรวม", { bold: true, width: 22 }),
+                          cell("ที่", { bold: true, width: 5 }),
+                          cell("จุดประสงค์เชิงพฤติกรรม (เป้าหมายระยะสั้น)", { bold: true, width: 38 }),
+                          cell("เกณฑ์การประเมิน", { bold: true, width: 15 }),
+                          cell("ระยะเวลา", { bold: true, width: 10 }),
+                          cell("ตัวชี้วัดที่ปรับ", { bold: true, width: 10 }),
                         ],
                       }),
-                      ...selectedGoals.map(
-                        (g, i) =>
+                      // แต่ละ domain → แถวแรกมีคอลัมน์ 1 (rowSpan = จำนวนเป้าหมายที่เลือกใน domain นี้)
+                      // แถวถัดไปของ domain เดียวกัน "ไม่ใส่คอลัมน์ 1 เลย" — docx แทรก continuation ให้เอง
+                      ...sectionsWithSelectedGoals.flatMap((sec) =>
+                        sec.selectedGoals.map((g, gi) =>
                           new TableRow({
                             children: [
-                              cell(String(i + 1)),
-                              // 🔒 แทนที่คำว่า "นักเรียน" ด้วยชื่อจริง — ทำฝั่งเราหลัง LLM คืนผลแล้ว
+                              ...(gi === 0 ? [domainSummaryCell(sec, sec.selectedGoals.length)] : []),
+                              cell(String(gi + 1)),
                               cell(personalizeForExport(g.finalText, s.fullName)),
                               cell(g.criterion?.trim() || CELL_BLANK),
                               cell(g.timeframe?.trim() || CELL_BLANK),
-                              // เป้าหมายด้านทักษะ (สื่อสาร/ช่วยเหลือตนเอง) ไม่อ้างตัวชี้วัดโดยปกติ — "-" ไม่ใช่ error
                               cell(g.finalIndicatorCodes.length ? g.finalIndicatorCodes.join(", ") : "-"),
                             ],
                           })
+                        )
                       ),
                     ],
                   }),
                 ]
               : [body("(ยังไม่ได้เลือกเป้าหมาย)", { indent: true })]),
 
-            // กางข้อความตัวชี้วัดของเป้าหมายที่เลือกไว้ทั้งหมด (ไม่ซ้ำ)
-            ...indicatorReferenceBlock(selectedGoals.flatMap((g) => g.finalIndicatorCodes)),
+            ...indicatorReferenceBlock(allSelectedIndicatorCodes),
 
-            // ── ส่วนที่ 6: สิ่งอำนวยความสะดวก ──
             heading(
               "6. ความต้องการสิ่งอำนวยความสะดวก เทคโนโลยีสิ่งอำนวยความสะดวก สื่อ บริการ และความช่วยเหลืออื่นใดทางการศึกษา"
             ),
@@ -386,7 +424,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         {
           properties: PORTRAIT_PAGE,
           children: [
-            // ── ส่วนที่ 7: คณะกรรมการ ──
             heading("7. คณะกรรมการจัดทำแผนการจัดการศึกษาเฉพาะบุคคล"),
             ...[
               { name: val(plan.principalName), role: "ผู้บริหารสถานศึกษา/ผู้แทน" },
@@ -404,7 +441,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             ]),
             body(thaiMeetingDateLine(plan.meetingDate)),
 
-            // ── ส่วนที่ 8: ความเห็นผู้ปกครอง ──
             heading("8. ความเห็นของบิดา มารดา หรือผู้ปกครอง"),
             body(
               "การจัดทำแผนการจัดการศึกษาเฉพาะบุคคลฉบับนี้ ข้าพเจ้า  ☐ เห็นด้วย   ☐ ไม่เห็นด้วย เหตุผล ..............................."
@@ -414,7 +450,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             body(`(${val(s.guardianName)})  บิดา / มารดา / ผู้ปกครอง`),
             body(`วันที่ ${BLANK} เดือน ${BLANK} พ.ศ. ${BLANK}`),
 
-            // ── หมายเหตุท้ายเอกสาร ──
             new Paragraph({
               spacing: { before: 500 },
               children: [
@@ -434,7 +469,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const buffer = await Packer.toBuffer(doc);
     const filename = `IEP_${s.code}_${plan.academicYear}_เทอม${plan.term}.docx`;
 
-    // แปลงเป็น Uint8Array เพราะ Buffer ของ @types/node 20.19+ ไม่ตรงกับ BodyInit แล้ว
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type":

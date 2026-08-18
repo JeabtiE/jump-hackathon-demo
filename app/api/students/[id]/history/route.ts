@@ -2,7 +2,13 @@
  * GET /api/students/[id]/history — คน A ดูแล
  *
  * แสดงพัฒนาการนักเรียนข้ามปี — query Assessment + Plan ที่ผูกกันอยู่แล้ว
- * ไม่มี AI call ใหม่ ไม่แก้ schema ใช้ความสัมพันธ์ Assessment.plans เดิม
+ * ไม่มี AI call ใหม่ ไม่แก้ schema เพิ่ม ใช้ความสัมพันธ์ Assessment.plans เดิม
+ *
+ * ✏️ 17 ส.ค. 2569 — แก้ตาม schema ใหม่: Plan ไม่มี `goals` ตรงๆ อีกต่อไป
+ *    (ย้ายไปอยู่ใต้ PlanDomainSection ตามโครงสร้างเอกสารจริง §14) ต้อง select
+ *    ผ่าน domainSections ก่อนแล้ว flatten รวมกันตอนนับ goalCount/selectedGoalCount
+ *    — ตัวเลขที่ history endpoint นี้คืนออกไปมีความหมายเหมือนเดิมทุกประการ
+ *    (จำนวนเป้าหมายทั้งหมด/ที่เลือกในแผนนั้น) แค่ต้อง query อ้อมขึ้นหนึ่งชั้น
  *
  * 🔒 fullName เป็น PII แต่ endpoint นี้ใช้แสดงผลในระบบเท่านั้น (เหมือน /api/students/[id])
  *    ไม่เคยถูกส่งต่อไป LLM
@@ -26,7 +32,13 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
                 term: true,
                 status: true,
                 finalizedAt: true,
-                goals: { select: { isSelected: true } },
+                // ✏️ เดิม: goals: { select: { isSelected: true } } ตรงนี้เลย
+                //    ตอนนี้ต้องอ้อมผ่าน domainSections ก่อน
+                domainSections: {
+                  select: {
+                    goals: { select: { isSelected: true } },
+                  },
+                },
               },
             },
           },
@@ -43,15 +55,20 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       assessedAt: a.assessedAt.toISOString(),
       abilityLevels: a.abilityLevels as StudentHistoryDTO["history"][number]["abilityLevels"],
       strengths: a.strengths,
-      plans: a.plans.map((p) => ({
-        id: p.id,
-        academicYear: p.academicYear,
-        term: p.term,
-        status: p.status as StudentHistoryDTO["history"][number]["plans"][number]["status"],
-        finalizedAt: p.finalizedAt?.toISOString() ?? null,
-        goalCount: p.goals.length,
-        selectedGoalCount: p.goals.filter((g) => g.isSelected).length,
-      })),
+      plans: a.plans.map((p) => {
+        // รวมเป้าหมายจากทุก domain section ในแผนนี้เข้าด้วยกัน — ตัวเลขที่ได้
+        // เหมือนเดิมทุกประการกับตอนที่ query goals ตรงจาก Plan
+        const allGoals = p.domainSections.flatMap((s) => s.goals);
+        return {
+          id: p.id,
+          academicYear: p.academicYear,
+          term: p.term,
+          status: p.status as StudentHistoryDTO["history"][number]["plans"][number]["status"],
+          finalizedAt: p.finalizedAt?.toISOString() ?? null,
+          goalCount: allGoals.length,
+          selectedGoalCount: allGoals.filter((g) => g.isSelected).length,
+        };
+      }),
     }));
 
     const dto: StudentHistoryDTO = {

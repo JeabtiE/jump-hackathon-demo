@@ -3,8 +3,10 @@
  * GET   : ดึงแผน 1 ฉบับ
  * PATCH : ครูแก้ไขข้อความ / เลือกเป้าหมาย / กดยืนยันแผน
  *
- * 🔑 การแก้ไขจะเปลี่ยนเฉพาะ finalText / finalReason
- *    ส่วน aiOriginal / aiReason ไม่แตะ → ระบบรู้เองว่าครูแก้อะไรบ้าง
+ * 🔑 การแก้ไขจะเปลี่ยนเฉพาะ finalXxx ส่วน aiXxx ไม่แตะ → ระบบรู้เองว่าครูแก้อะไรบ้าง
+ *
+ * ✏️ 17 ส.ค. 2569 — เพิ่มการแก้ไขระดับ domain section (จุดเด่น/จุดที่ควรพัฒนา/
+ *    เป้าหมายระยะยาว/วิธีประเมิน/ผู้รับผิดชอบ) นอกเหนือจากระดับ goal เดิม
  */
 
 import { NextResponse } from "next/server";
@@ -16,7 +18,10 @@ import type { UpdatePlanRequest } from "@/lib/types";
 
 const INCLUDE = {
   student: true,
-  goals: { orderBy: { orderIndex: "asc" as const } },
+  domainSections: {
+    orderBy: { orderIndex: "asc" as const },
+    include: { goals: { orderBy: { orderIndex: "asc" as const } } },
+  },
   media: true,
 };
 
@@ -53,7 +58,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     });
     if (!plan) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
 
-    // เพดานเงินอุดหนุนนับรวมทั้งปีการศึกษา — ต้องรู้ยอดของแผนอื่นด้วย (1 query)
     const annual = await fetchAnnualMediaContext({
       studentId: plan.studentId,
       academicYear: plan.academicYear,
@@ -75,7 +79,30 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!existing) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
 
     await prisma.$transaction(async (tx) => {
+      // ── ✏️ ใหม่: อัปเดตระดับ domain section — แก้เฉพาะ finalXxx ไม่แตะ aiXxx ──
+      for (const s of body.domainSections ?? []) {
+        await tx.planDomainSection.update({
+          where: { id: s.id },
+          data: {
+            ...(s.finalStrengths !== undefined ? { finalStrengths: s.finalStrengths } : {}),
+            ...(s.finalDevelopmentAreas !== undefined
+              ? { finalDevelopmentAreas: s.finalDevelopmentAreas }
+              : {}),
+            ...(s.finalLongTermGoal !== undefined
+              ? { finalLongTermGoal: s.finalLongTermGoal }
+              : {}),
+            ...(s.finalEvaluationMethod !== undefined
+              ? { finalEvaluationMethod: s.finalEvaluationMethod }
+              : {}),
+            ...(s.responsibleTeacherName !== undefined
+              ? { responsibleTeacherName: s.responsibleTeacherName.trim() || null }
+              : {}),
+          },
+        });
+      }
+
       // อัปเดตเป้าหมาย — แก้เฉพาะ finalText / finalIndicatorCodes ไม่แตะ aiOriginal / aiIndicatorCodes
+      // ⚠️ goal.id ไม่ซ้ำกันข้าม section ทั้งแผน จึง update ตรงด้วย id ได้เลย ไม่ต้องรู้ว่าอยู่ section ไหน
       for (const g of body.goals ?? []) {
         await tx.planGoal.update({
           where: { id: g.id },
@@ -101,7 +128,6 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       }
 
       // ── อัปเดตตัวแผนเอง: คณะกรรมการ (ส่วนที่ 7) + สถานะ ──
-      // ส่งเฉพาะ key ที่ client ส่งมาจริง (undefined = ไม่แตะ, "" = ล้างค่า)
       const planData: Record<string, unknown> = {};
 
       if (body.principalName !== undefined)
@@ -113,7 +139,6 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       if (body.meetingDate !== undefined)
         planData.meetingDate = body.meetingDate.trim() || null;
 
-      // เปลี่ยนสถานะ — ถ้ายืนยันแผน บันทึกเวลาที่ใช้ทำ
       if (body.status) {
         planData.status = body.status;
         planData.finalizedAt =
@@ -123,6 +148,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       if (Object.keys(planData).length > 0) {
         await tx.plan.update({ where: { id: params.id }, data: planData });
       }
+    }, {
+      // ⏱️ default timeout 5s สั้นเกินไปเมื่อ connection ไป DB ช้า (พังเป็น P2028)
+      // เผื่อไว้ 20s + maxWait รอคิว connection จาก pool อีก 10s
+      timeout: 20000,
+      maxWait: 10000,
     });
 
     const updated = await prisma.plan.findUnique({
@@ -130,7 +160,6 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       include: INCLUDE,
     });
 
-    // PATCH เปลี่ยน isApproved ได้ → ยอดรวมทั้งปีเปลี่ยนตาม ต้องคิดใหม่ทุกครั้ง
     const annual = await fetchAnnualMediaContext({
       studentId: updated!.studentId,
       academicYear: updated!.academicYear,
