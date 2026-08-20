@@ -6,8 +6,9 @@
  * ✏️ 17 ส.ค. 2569
  *   1. ลบ ABILITY_OPTIONS ที่ก็อปปี้ซ้ำออก → import จาก lib/ability-options.ts
  *      (single source of truth เดิมของคน A) เพิ่ม option ใหม่แก้ที่เดียวพอ
- *   2. เพิ่มช่อง "ผู้รับผิดชอบ" ต่อ domain ที่เลือกไว้ — ส่งเป็น
- *      responsibleTeacherByDomain ตอนกด "สร้างแผน" (CreatePlanRequest ใหม่)
+ *   2. ยุบช่อง "ผู้รับผิดชอบ" ต่อ domain ออก — คุณครูใช้ผู้รับผิดชอบคนเดียว
+ *      ทั้งฉบับ จึงเหลือช่องเดียวระดับเอกสาร (PlanDTO.responsibleTeacherName)
+ *      ที่กรอกในฟอร์มคณะกรรมการ (ส่วนที่ 7)
  */
 
 "use client";
@@ -29,16 +30,12 @@ export default function AssessmentForm({
     strengths: string;
     academicYear: string;
     term: string;
-    responsibleTeacherByDomain: Record<string, string>;
   }) => void;
   loading: boolean;
 }) {
   const [abilityLevels, setAbilityLevels] = useState<Record<string, string>>(
     {},
   );
-  const [responsibleTeacherByDomain, setResponsibleTeacherByDomain] = useState<
-    Record<string, string>
-  >({});
   const [strengths, setStrengths] = useState("");
   const [academicYear, setAcademicYear] = useState(CURRENT_YEAR);
   const [term, setTerm] = useState("1");
@@ -57,56 +54,31 @@ export default function AssessmentForm({
         </p>
       ) : (
         <div className="space-y-4">
-          {domains.map((d) => {
-            const isActive = Boolean(abilityLevels[d.domain]);
-            return (
-              <div key={d.domain}>
-                <label className="mb-1 block text-xs text-slate-500">
-                  {d.label}
-                </label>
-                {d.hint && (
-                  <p className="mb-1 text-xs text-slate-400">{d.hint}</p>
-                )}
-                <select
-                  value={abilityLevels[d.domain] ?? ""}
-                  onChange={(e) =>
-                    setAbilityLevels((prev) => ({
-                      ...prev,
-                      [d.domain]: e.target.value,
-                    }))
-                  }
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                >
-                  <option value="">— ไม่ระบุ —</option>
-                  {d.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-
-                {/* ผู้รับผิดชอบของด้านนี้ — โผล่ทันทีที่เลือกระดับความสามารถของด้านนี้ไว้ */}
-                {isActive && (
-                  <div className="mt-2">
-                    <label className="mb-1 block text-xs text-slate-500">
-                      ผู้รับผิดชอบด้าน{d.label} (ไม่บังคับ)
-                    </label>
-                    <input
-                      value={responsibleTeacherByDomain[d.domain] ?? ""}
-                      onChange={(e) =>
-                        setResponsibleTeacherByDomain((prev) => ({
-                          ...prev,
-                          [d.domain]: e.target.value,
-                        }))
-                      }
-                      placeholder="เช่น ครูสมหมาย มีใจ"
-                      className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {domains.map((d) => (
+            <div key={d.domain}>
+              <label className="mb-1 block text-xs text-slate-500">
+                {d.label}
+              </label>
+              {d.hint && <p className="mb-1 text-xs text-slate-400">{d.hint}</p>}
+              <select
+                value={abilityLevels[d.domain] ?? ""}
+                onChange={(e) =>
+                  setAbilityLevels((prev) => ({
+                    ...prev,
+                    [d.domain]: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">— ไม่ระบุ —</option>
+                {d.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
         </div>
       )}
 
@@ -157,7 +129,6 @@ export default function AssessmentForm({
             strengths,
             academicYear,
             term,
-            responsibleTeacherByDomain,
           })
         }
         disabled={loading || !hasAnyAbility}

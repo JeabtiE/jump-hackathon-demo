@@ -28,10 +28,18 @@ export default function StatsPage() {
     { label: "แผนทั้งหมด", value: `${stats.totalPlans} ฉบับ` },
     { label: "ยืนยันแล้ว", value: `${stats.finalizedPlans} ฉบับ` },
     {
-      label: "เวลาเฉลี่ยต่อแผน",
+      label: "เวลาเฉลี่ยต่อแผน (ร่างแผนทั้ง workflow)",
+      value: stats.avgDraftingSeconds
+        ? `${Math.round(stats.avgDraftingSeconds / 60)} นาที`
+        : "-",
+      note: "นับตั้งแต่กรอกแบบประเมินเสร็จ → AI ร่าง → ครูแก้/เลือก → ครูกดยืนยัน — ใช้ตัวนี้เทียบ baseline",
+    },
+    {
+      label: "เวลาเฉลี่ย (เฉพาะแก้/เลือก → ยืนยัน)",
       value: stats.avgDurationSeconds
         ? `${Math.round(stats.avgDurationSeconds / 60)} นาที`
         : "-",
+      note: "ตัวเลขเดิม ไม่รวมเวลากรอกแบบประเมิน/เวลา AI ร่าง — เก็บไว้อ้างอิงย้อนหลัง",
     },
     { label: "เป้าหมายที่ครูแก้", value: `${stats.goalEditRate}%` },
     { label: "เหตุผลเบิกสื่อที่ครูแก้", value: `${stats.mediaEditRate}%` },
@@ -57,6 +65,9 @@ export default function StatsPage() {
           >
             <p className="text-xs text-slate-500">{c.label}</p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{c.value}</p>
+            {"note" in c && c.note && (
+              <p className="mt-1 text-[11px] leading-snug text-slate-400">{c.note}</p>
+            )}
           </div>
         ))}
       </div>

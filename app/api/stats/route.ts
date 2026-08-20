@@ -75,6 +75,29 @@ export async function GET() {
         ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
         : null;
 
+    // เวลาเฉลี่ยของ "งานร่างแผนทั้ง workflow" — กรอกแบบประเมินเสร็จ → AI ร่าง →
+    // ครูแก้/เลือก → ครูกดยืนยัน คือตัวที่เอาไปเทียบ baseline 1-2+ วัน/คน
+    // ⚠️ แยก query จาก avgDurationSeconds ด้านบน อย่ารวมกัน — คนละความหมาย
+    //    (ของเดิมนับ createdAt→finalizedAt = เฉพาะช่วงครูแก้หลัง AI ร่างเสร็จ)
+    const draftingFinalized = await prisma.plan.findMany({
+      where: { status: "finalized", finalizedAt: { not: null } },
+      select: { finalizedAt: true, assessment: { select: { assessedAt: true } } },
+    });
+
+    const draftingDurations = draftingFinalized
+      .map(
+        (p) => (p.finalizedAt!.getTime() - p.assessment.assessedAt.getTime()) / 1000
+      )
+      // กรองค่าติดลบ/ศูนย์เหมือน pattern เดิม — กันแผนทดสอบเก่าที่ข้อมูลเวลาเพี้ยน
+      .filter((d) => d > 0);
+
+    const avgDraftingSeconds =
+      draftingDurations.length > 0
+        ? Math.round(
+            draftingDurations.reduce((a, b) => a + b, 0) / draftingDurations.length
+          )
+        : null;
+
     const editedGoals = goals.filter((g) => g.aiOriginal.trim() !== g.finalText.trim()).length;
 
     // ⚠️ นับเฉพาะรายการที่ AI เขียนเหตุผลไว้จริง
@@ -104,6 +127,7 @@ export async function GET() {
       totalPlans,
       finalizedPlans,
       avgDurationSeconds,
+      avgDraftingSeconds,
       goalEditRate: goals.length > 0 ? Math.round((editedGoals / goals.length) * 100) : 0,
       mediaEditRate:
         aiWrittenMedia.length > 0

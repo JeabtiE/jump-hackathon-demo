@@ -288,9 +288,6 @@ export async function POST(request: Request) {
             finalLongTermGoal: sec.longTermGoal,
             aiEvaluationMethod: sec.evaluationMethod,
             finalEvaluationMethod: sec.evaluationMethod,
-            // ครูกรอกเองตอนกด "สร้างแผน" — ไม่ระบุ = เว้นว่างให้กรอกทีหลัง
-            responsibleTeacherName:
-              body.responsibleTeacherByDomain?.[sec.domain]?.trim() || null,
             orderIndex: si,
             goals: {
               create: (sec.shortTermObjectives ?? []).map((g, gi) => {

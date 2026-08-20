@@ -122,8 +122,8 @@ export interface StudentDetail extends StudentPII {
  */
 
 // ── 1. แก้ CreatePlanRequest (ตำแหน่งเดิมบรรทัด ~165) ──────────
-// เพิ่ม responsibleTeacherByDomain — ครูกรอกเองต่อ domain ตอนกด "สร้างแผน"
-// (ไม่ใช่ AI คิด ไม่มีข้อมูลให้ AI เดาได้ว่าใครรับผิดชอบ)
+// ผู้รับผิดชอบมีช่องเดียวระดับเอกสาร (responsibleTeacherName) ใช้ทั้งส่วนที่ 5 และ 7
+// — คุณครูใช้ผู้รับผิดชอบคนเดียวตลอดทั้งฉบับ จึงไม่มีการแยกต่อ domain แล้ว
 
 export interface CreatePlanRequest {
   studentId: string;
@@ -137,8 +137,6 @@ export interface CreatePlanRequest {
   responsibleTeacherName?: string;
   homeroomTeacherName?: string;
   meetingDate?: string;
-  /** ผู้รับผิดชอบต่อ domain เช่น { "communication": "ครูสุภาพร เสนนะ" } — ไม่ระบุ = เว้นว่างให้กรอกทีหลัง */
-  responsibleTeacherByDomain?: Record<string, string>;
 }
 
 
@@ -269,7 +267,10 @@ export interface UpdatePlanRequest {
 export interface UsageStats {
   totalPlans: number;
   finalizedPlans: number;
+  /** เวลาเฉลี่ย "ครูแก้/เลือก → ยืนยัน" เท่านั้น — ของเดิม ไม่รวมเวลากรอกแบบประเมิน/AI ร่าง */
   avgDurationSeconds: number | null;
+  /** เวลาเฉลี่ย "กรอกแบบประเมินเสร็จ → AI ร่าง → แก้/เลือก → ยืนยัน" — scope เต็มของงานร่างแผน */
+  avgDraftingSeconds: number | null;
   goalEditRate: number;
   mediaEditRate: number;
   /** แบ่งละเอียดจาก goalEditRate เดิม — สัดส่วน % ของเป้าหมายทั้งหมด รวมกัน = 100 */

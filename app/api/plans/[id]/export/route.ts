@@ -181,9 +181,10 @@ function domainSummaryCell(
     finalDevelopmentAreas: string;
     finalLongTermGoal: string;
     finalEvaluationMethod: string;
-    responsibleTeacherName: string | null;
   },
-  rowSpan: number
+  rowSpan: number,
+  /** ผู้รับผิดชอบระดับเอกสาร (PlanDTO.responsibleTeacherName) — คนเดียวกับที่ใช้ในส่วนที่ 7 */
+  responsibleTeacherName: string | null
 ) {
   const line = (label: string, text: string) =>
     new Paragraph({
@@ -207,7 +208,7 @@ function domainSummaryCell(
       line("จุดที่ควรพัฒนา", section.finalDevelopmentAreas || CELL_BLANK),
       line("เป้าหมายระยะยาว 1 ปี", section.finalLongTermGoal || CELL_BLANK),
       line("วิธีประเมินผล", section.finalEvaluationMethod || CELL_BLANK),
-      line("ผู้รับผิดชอบ", section.responsibleTeacherName?.trim() || CELL_BLANK),
+      line("ผู้รับผิดชอบ", responsibleTeacherName?.trim() || CELL_BLANK),
     ],
   });
 }
@@ -359,7 +360,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
                         sec.selectedGoals.map((g, gi) =>
                           new TableRow({
                             children: [
-                              ...(gi === 0 ? [domainSummaryCell(sec, sec.selectedGoals.length)] : []),
+                              ...(gi === 0
+                                ? [domainSummaryCell(sec, sec.selectedGoals.length, plan.responsibleTeacherName)]
+                                : []),
                               cell(String(gi + 1)),
                               cell(personalizeForExport(g.finalText, s.fullName)),
                               cell(g.criterion?.trim() || CELL_BLANK),
