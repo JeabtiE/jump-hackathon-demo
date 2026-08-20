@@ -15,6 +15,7 @@ export const ABILITY_OPTIONS: Record<
   {
     domain: string;
     label: string;
+    hint?: string;
     options: { value: string; label: string }[];
   }[]
 > = {
@@ -22,6 +23,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "communication",
       label: "การสื่อสาร",
+      hint: "เด็กพูดคุยสื่อสารกับคนอื่นได้แค่ไหนตอนนี้",
       options: [
         { value: "no_speech_gesture_only", label: "ไม่พูด ใช้ท่าทางสื่อสาร" },
         {
@@ -33,6 +35,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "behavior",
       label: "พฤติกรรม",
+      hint: "เด็กมีพฤติกรรมที่ส่งผลต่อการเรียนแบบไหนบ้าง",
       options: [
         { value: "frequent_off_task", label: "วอกแวกบ่อย ลุกจากที่นั่ง" },
         {
@@ -44,11 +47,13 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "selfHelp",
       label: "การช่วยเหลือตนเอง",
+      hint: "เด็กทำกิจวัตรประจำวัน (แต่งตัว/กินข้าว/เข้าห้องน้ำ) ได้เองแค่ไหน",
       options: [{ value: "needs_prompting", label: "ต้องมีคนเตือนทุกขั้นตอน" }],
     },
     {
       domain: "math",
       label: "การคำนวณ",
+      hint: "เด็กนับเลข/คำนวณพื้นฐานได้แค่ไหนตอนนี้",
       options: [
         {
           value: "needs_concrete_visual_support",
@@ -59,6 +64,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "readiness",
       label: "ความพร้อมทางการเรียนรู้",
+      hint: "เด็กพร้อมสำหรับการเรียนพื้นฐาน (จับปากกา จับคู่ เรียงลำดับ) แค่ไหน",
       options: [
         {
           value: "needs_prewriting_practice",
@@ -75,6 +81,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "reading",
       label: "การอ่าน",
+      hint: "เด็กอ่าน สะกดคำ ได้ตามระดับชั้นไหม",
       options: [
         { value: "cannot_spell_2syllable", label: "สะกดคำ 2 พยางค์ไม่ได้" },
       ],
@@ -82,6 +89,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "writing",
       label: "การเขียน",
+      hint: "เด็กเขียนหนังสือ คุมลายมือ ได้แค่ไหน",
       options: [
         {
           value: "poor_handwriting",
@@ -92,6 +100,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "math",
       label: "การคำนวณ",
+      hint: "เด็กบวกลบคูณหาร ตามระดับชั้นได้ไหม",
       options: [
         { value: "cannot_calculate_carry", label: "คำนวณการทดเลขไม่ได้" },
       ],
@@ -101,6 +110,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "reading",
       label: "การเรียนรู้ / การรับรู้",
+      hint: "เด็กเข้าใจ/รับรู้เนื้อหาที่สอนได้แค่ไหน ต้องช่วยแบบไหน",
       options: [
         {
           value: "needs_concrete_visual_support",
@@ -111,6 +121,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "math",
       label: "การคำนวณ",
+      hint: "เด็กนับเลข/คำนวณพื้นฐานได้แค่ไหนตอนนี้",
       options: [
         {
           value: "needs_concrete_visual_support",
@@ -121,6 +132,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "selfHelp",
       label: "การช่วยเหลือตนเอง",
+      hint: "เด็กทำกิจวัตรประจำวันได้เองแค่ไหน ต้องมีโครงสร้าง/ขั้นตอนช่วยไหม",
       options: [
         {
           value: "needs_routine_structure",
@@ -131,6 +143,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "behavior",
       label: "พฤติกรรม",
+      hint: "เด็กเข้าใจและทำตามคำสั่งในห้องเรียนได้แค่ไหน",
       options: [
         {
           value: "needs_simple_instruction",
@@ -143,6 +156,7 @@ export const ABILITY_OPTIONS: Record<
     {
       domain: "communication",
       label: "การสื่อสาร",
+      hint: "เด็กพูดและออกเสียงได้ชัดเจนแค่ไหนตอนนี้",
       options: [
         {
           value: "limited_expressive_language",

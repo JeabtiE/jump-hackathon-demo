@@ -33,7 +33,9 @@ export default function AssessmentForm({
   }) => void;
   loading: boolean;
 }) {
-  const [abilityLevels, setAbilityLevels] = useState<Record<string, string>>({});
+  const [abilityLevels, setAbilityLevels] = useState<Record<string, string>>(
+    {},
+  );
   const [responsibleTeacherByDomain, setResponsibleTeacherByDomain] = useState<
     Record<string, string>
   >({});
@@ -59,7 +61,12 @@ export default function AssessmentForm({
             const isActive = Boolean(abilityLevels[d.domain]);
             return (
               <div key={d.domain}>
-                <label className="mb-1 block text-xs text-slate-500">{d.label}</label>
+                <label className="mb-1 block text-xs text-slate-500">
+                  {d.label}
+                </label>
+                {d.hint && (
+                  <p className="mb-1 text-xs text-slate-400">{d.hint}</p>
+                )}
                 <select
                   value={abilityLevels[d.domain] ?? ""}
                   onChange={(e) =>
@@ -92,7 +99,7 @@ export default function AssessmentForm({
                           [d.domain]: e.target.value,
                         }))
                       }
-                      placeholder="เช่น ครูสุภาพร เสนนะ"
+                      placeholder="เช่น ครูสมหมาย มีใจ"
                       className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
                     />
                   </div>
@@ -114,12 +121,16 @@ export default function AssessmentForm({
           placeholder="เช่น ชอบวาดภาพ จดจำภาพได้ดี"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
-        <p className="mt-1 text-xs text-amber-600">⚠️ ห้ามกรอกชื่อจริงหรือข้อมูลระบุตัวตน</p>
+        <p className="mt-1 text-xs text-amber-600">
+          ⚠️ ห้ามกรอกชื่อจริงหรือข้อมูลระบุตัวตน
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">ปีการศึกษา</label>
+          <label className="mb-1 block text-xs text-slate-500">
+            ปีการศึกษา
+          </label>
           <input
             value={academicYear}
             onChange={(e) => setAcademicYear(e.target.value)}
@@ -141,7 +152,13 @@ export default function AssessmentForm({
 
       <button
         onClick={() =>
-          onSubmit({ abilityLevels, strengths, academicYear, term, responsibleTeacherByDomain })
+          onSubmit({
+            abilityLevels,
+            strengths,
+            academicYear,
+            term,
+            responsibleTeacherByDomain,
+          })
         }
         disabled={loading || !hasAnyAbility}
         className="w-full rounded-lg bg-teal-600 px-4 py-2.5 font-medium text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
