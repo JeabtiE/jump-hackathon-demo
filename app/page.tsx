@@ -98,8 +98,7 @@ export default function Home() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900">IEP GEN</h1>
           <p className="mt-1 text-slate-600">
-            กรอกข้อมูลนักเรียนครั้งเดียว รับเป้าหมาย IEP และรายการสื่อที่เบิกได้
-            พร้อมเหตุผลประกอบ
+            ช่วยครูออกแบบแผนการจัดการศึกษาเฉพาะบุคคล (IEP) ได้ชัดเจนและรวดเร็ว ทันเวลา
           </p>
         </div>
         <a
