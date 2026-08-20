@@ -356,24 +356,62 @@ export default function PlanReview({ planId }: { planId: string }) {
         <h3 className="font-semibold text-slate-900">
           6. สิ่งอำนวยความสะดวก สื่อ บริการ
         </h3>
-        {plan.media.map((m) => (
-          <MediaRow
-            key={m.id}
-            media={m}
-            onChange={(next) =>
-              setPlan((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      media: prev.media.map((mm) =>
-                        mm.id === next.id ? next : mm,
-                      ),
-                    }
-                  : prev,
-              )
-            }
-          />
-        ))}
+
+        {plan.media.filter((m) => m.aiReason !== "").length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium text-teal-700">
+              ระบบแนะนำตามเป้าหมายที่เลือก
+            </h4>
+            {plan.media
+              .filter((m) => m.aiReason !== "")
+              .map((m) => (
+                <MediaRow
+                  key={m.id}
+                  media={m}
+                  onChange={(next) =>
+                    setPlan((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            media: prev.media.map((mm) =>
+                              mm.id === next.id ? next : mm,
+                            ),
+                          }
+                        : prev,
+                    )
+                  }
+                />
+              ))}
+          </div>
+        )}
+
+        {plan.media.filter((m) => m.aiReason === "").length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium text-slate-500">
+              รายการอื่นที่มีสิทธิ์เบิกได้ (ครูเลือกเพิ่มได้)
+            </h4>
+            {plan.media
+              .filter((m) => m.aiReason === "")
+              .map((m) => (
+                <MediaRow
+                  key={m.id}
+                  media={m}
+                  onChange={(next) =>
+                    setPlan((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            media: prev.media.map((mm) =>
+                              mm.id === next.id ? next : mm,
+                            ),
+                          }
+                        : prev,
+                    )
+                  }
+                />
+              ))}
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3">
