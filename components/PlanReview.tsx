@@ -14,7 +14,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PlanDTO, PlanDomainSectionDTO, PlanGoalDTO, PlanMediaDTO } from "@/lib/types";
+import type {
+  PlanDTO,
+  PlanDomainSectionDTO,
+  PlanGoalDTO,
+  PlanMediaDTO,
+} from "@/lib/types";
 
 async function fetchPlan(planId: string): Promise<PlanDTO> {
   const res = await fetch(`/api/plans/${planId}`);
@@ -29,7 +34,7 @@ async function savePlan(
     goals?: PlanGoalDTO[];
     media?: PlanMediaDTO[];
     status?: PlanDTO["status"];
-  }
+  },
 ): Promise<PlanDTO> {
   const body = {
     domainSections: patch.domainSections?.map((s) => ({
@@ -101,7 +106,9 @@ function GoalRow({
         </div>
       </div>
       <div className="mt-1 pl-6">
-        <label className="text-xs text-slate-500">ตัวชี้วัด (คั่นด้วย , )</label>
+        <label className="text-xs text-slate-500">
+          ตัวชี้วัด (คั่นด้วย , )
+        </label>
         <input
           value={goal.finalIndicatorCodes.join(", ")}
           onChange={(e) =>
@@ -117,7 +124,9 @@ function GoalRow({
         />
       </div>
       {goal.isEdited && (
-        <p className="mt-1 pl-6 text-xs text-amber-600">✏️ แก้ไขจากที่ AI ร่างแล้ว</p>
+        <p className="mt-1 pl-6 text-xs text-amber-600">
+          ✏️ แก้ไขจากที่ AI ร่างแล้ว
+        </p>
       )}
     </div>
   );
@@ -126,66 +135,106 @@ function GoalRow({
 function DomainSectionCard({
   section,
   onChange,
+  isOpen,
+  onToggle,
+  index,
+  total,
 }: {
   section: PlanDomainSectionDTO;
   onChange: (next: PlanDomainSectionDTO) => void;
+  isOpen: boolean;
+  onToggle: () => void;
+  index: number;
+  total: number;
 }) {
-  const field = (
-    key: "finalStrengths" | "finalDevelopmentAreas" | "finalLongTermGoal" | "finalEvaluationMethod",
-    label: string
-  ) => (
-    <div>
-      <label className="mb-1 block text-xs text-slate-500">{label}</label>
-      <textarea
-        value={section[key]}
-        onChange={(e) => onChange({ ...section, [key]: e.target.value })}
-        rows={2}
-        className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-      />
-    </div>
-  );
-
-  return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900">{section.domainLabel}</h3>
-        {section.isEdited && <span className="text-xs text-amber-600">✏️ มีการแก้ไข</span>}
-      </div>
-
-      {field("finalStrengths", "จุดเด่น")}
-      {field("finalDevelopmentAreas", "จุดที่ควรพัฒนา")}
-      {field("finalLongTermGoal", "เป้าหมายระยะยาว 1 ปี")}
-      {field("finalEvaluationMethod", "วิธีประเมินผล")}
-
-      <div>
-        <label className="mb-1 block text-xs text-slate-500">ผู้รับผิดชอบ</label>
-        <input
-          value={section.responsibleTeacherName ?? ""}
-          onChange={(e) => onChange({ ...section, responsibleTeacherName: e.target.value })}
+  // helper สร้างช่อง textarea ของแต่ละ final* field ใน section
+  function field(
+    key:
+      | "finalStrengths"
+      | "finalDevelopmentAreas"
+      | "finalLongTermGoal"
+      | "finalEvaluationMethod",
+    label: string,
+  ) {
+    return (
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-slate-500">{label}</label>
+        <textarea
+          value={section[key] ?? ""}
+          onChange={(e) => onChange({ ...section, [key]: e.target.value })}
+          rows={3}
           className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
         />
       </div>
+    );
+  }
 
-      <div className="space-y-2 pt-2">
-        <p className="text-xs font-medium text-slate-600">เป้าหมายระยะสั้น (ติ๊กข้อที่จะใช้จริง)</p>
-        {section.goals.map((g) => (
-          <GoalRow
-            key={g.id}
-            goal={g}
-            onChange={(next) =>
-              onChange({
-                ...section,
-                goals: section.goals.map((og) => (og.id === next.id ? next : og)),
-              })
-            }
-          />
-        ))}
-      </div>
+  return (
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <h3 className="font-semibold text-slate-900">
+          {index}/{total} · {section.domainLabel}
+        </h3>
+        <span className="flex items-center gap-2">
+          {section.isEdited && (
+            <span className="text-xs text-amber-600">✏️ มีการแก้ไข</span>
+          )}
+          <span className="text-slate-400">{isOpen ? "▲" : "▼"}</span>
+        </span>
+      </button>
+
+      {isOpen && (
+        <>
+          {field("finalStrengths", "จุดเด่น")}
+          {field("finalDevelopmentAreas", "จุดที่ควรพัฒนา")}
+          {field("finalLongTermGoal", "เป้าหมายระยะยาว 1 ปี")}
+          {field("finalEvaluationMethod", "วิธีประเมินผล")}
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-500">
+              ผู้รับผิดชอบ
+            </label>
+            <input
+              value={section.responsibleTeacherName ?? ""}
+              onChange={(e) =>
+                onChange({ ...section, responsibleTeacherName: e.target.value })
+              }
+              className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2 pt-2">
+            {section.goals.map((goal) => (
+              <GoalRow
+                key={goal.id}
+                goal={goal}
+                onChange={(next) =>
+                  onChange({
+                    ...section,
+                    goals: section.goals.map((g) =>
+                      g.id === next.id ? next : g,
+                    ),
+                  })
+                }
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function MediaRow({ media, onChange }: { media: PlanMediaDTO; onChange: (next: PlanMediaDTO) => void }) {
+function MediaRow({
+  media,
+  onChange,
+}: {
+  media: PlanMediaDTO;
+  onChange: (next: PlanMediaDTO) => void;
+}) {
   return (
     <div className="rounded-lg border border-slate-200 p-3">
       <label className="flex items-start gap-2">
@@ -197,18 +246,27 @@ function MediaRow({ media, onChange }: { media: PlanMediaDTO; onChange: (next: P
         />
         <div className="flex-1">
           <p className="text-sm font-medium text-slate-800">
-            {media.item} <span className="text-xs text-slate-400">(บัญชี {media.category})</span>
+            {media.item}{" "}
+            <span className="text-xs text-slate-400">
+              (บัญชี {media.category})
+            </span>
           </p>
           <textarea
             value={media.finalReason}
-            onChange={(e) => onChange({ ...media, finalReason: e.target.value })}
+            onChange={(e) =>
+              onChange({ ...media, finalReason: e.target.value })
+            }
             rows={2}
             placeholder="เหตุผลและความจำเป็น"
             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
           />
         </div>
       </label>
-      {media.isEdited && <p className="mt-1 pl-6 text-xs text-amber-600">✏️ แก้ไขจากที่ AI ร่างแล้ว</p>}
+      {media.isEdited && (
+        <p className="mt-1 pl-6 text-xs text-amber-600">
+          ✏️ แก้ไขจากที่ AI ร่างแล้ว
+        </p>
+      )}
     </div>
   );
 }
@@ -218,6 +276,12 @@ export default function PlanReview({ planId }: { planId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (plan && !openSectionId)
+      setOpenSectionId(plan.domainSections[0]?.id ?? null);
+  }, [plan, openSectionId]);
 
   useEffect(() => {
     fetchPlan(planId)
@@ -252,7 +316,9 @@ export default function PlanReview({ planId }: { planId: string }) {
     <div className="space-y-5">
       {plan.consistencyWarnings.length > 0 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-          <p className="mb-1 text-sm font-medium text-amber-800">ควรตรวจสอบก่อนยืนยันแผน:</p>
+          <p className="mb-1 text-sm font-medium text-amber-800">
+            ควรตรวจสอบก่อนยืนยันแผน:
+          </p>
           <ul className="list-inside list-disc space-y-1 text-sm text-amber-700">
             {plan.consistencyWarnings.map((w, i) => (
               <li key={i}>{w}</li>
@@ -261,20 +327,26 @@ export default function PlanReview({ planId }: { planId: string }) {
         </div>
       )}
 
-      {plan.domainSections.map((section) => (
+      {plan.domainSections.map((section, i) => (
         <DomainSectionCard
           key={section.id}
           section={section}
+          isOpen={openSectionId === section.id}
+          onToggle={() =>
+            setOpenSectionId(openSectionId === section.id ? null : section.id)
+          }
+          index={i + 1}
+          total={plan.domainSections.length}
           onChange={(next) =>
             setPlan((prev) =>
               prev
                 ? {
                     ...prev,
                     domainSections: prev.domainSections.map((s) =>
-                      s.id === next.id ? next : s
+                      s.id === next.id ? next : s,
                     ),
                   }
-                : prev
+                : prev,
             )
           }
         />
@@ -290,7 +362,14 @@ export default function PlanReview({ planId }: { planId: string }) {
             media={m}
             onChange={(next) =>
               setPlan((prev) =>
-                prev ? { ...prev, media: prev.media.map((mm) => (mm.id === next.id ? next : mm)) } : prev
+                prev
+                  ? {
+                      ...prev,
+                      media: prev.media.map((mm) =>
+                        mm.id === next.id ? next : mm,
+                      ),
+                    }
+                  : prev,
               )
             }
           />
