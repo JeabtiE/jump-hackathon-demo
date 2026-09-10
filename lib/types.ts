@@ -31,6 +31,25 @@ export interface AbilityLevels {
   selfHelp?: string;
 }
 
+/**
+ * ข้อความอิสระที่ครูพิมพ์บรรยายระดับความสามารถ (domain -> ข้อความ)
+ *
+ * ⚠️ ยังไม่ใช่ "ค่าที่ยืนยันแล้ว" — retrieval ไม่ใช้ค่านี้ ใช้ AbilityLevels เท่านั้น
+ * ⚠️ ไม่ใช่ PII ZONE (ไหลเข้า LLM ได้) แต่ต้องผ่าน scrubFreeText() ก่อนเสมอ
+ */
+export type AbilityFreeText = Record<string, string>;
+
+/** ผลที่ AI ตีความข้อความอิสระเป็น enum ระดับความสามารถ — ข้อเสนอเท่านั้น ครูตัดสิน */
+export interface AbilityClassification {
+  domain: string;
+  /** ค่า enum ที่เสนอ (ต้องเป็นค่าใน ABILITY_OPTIONS) — null = ตีความไม่ได้ */
+  suggestedLevel: string | null;
+  /** low = ต้องให้ครูยืนยันก่อนใช้ */
+  confidence: "high" | "low";
+  /** เหตุผลสั้นๆ ให้ครูตรวจสอบได้ */
+  rationale: string;
+}
+
 /** กลุ่มสาระที่ระบบมีข้อมูลตัวชี้วัด (data/curriculum.json) — ขอบเขต ป.1-6 */
 export type CurriculumSubject = "thai" | "math";
 
@@ -127,7 +146,17 @@ export interface StudentDetail extends StudentPII {
 
 export interface CreatePlanRequest {
   studentId: string;
+  /** ค่าที่ครูยืนยันแล้ว — เป็นค่าเดียวที่ retrieval ใช้ */
   abilityLevels: AbilityLevels;
+  /** ข้อความอิสระที่ครูพิมพ์ ส่งมาคู่กับ abilityLevels เพื่อเป็น context ให้ generation + audit */
+  abilityFreeText?: AbilityFreeText;
+  /**
+   * ค่า enum ที่ classifier เสนอต่อ domain "ก่อนครูแก้" — เก็บไว้ทำ audit อย่างเดียว
+   * (pattern เดียวกับ aiOriginal/finalText ของ PlanGoal)
+   *
+   * ⚠️ ห้ามใช้แทน abilityLevels: retrieval และ generation ใช้ค่าที่ครูยืนยันเท่านั้น
+   */
+  abilityLevelsAiSuggested?: Record<string, string>;
   strengths?: string;
   subjects?: CurriculumSubject[];
   curriculumGrade?: string;
@@ -279,6 +308,13 @@ export interface UsageStats {
     minorEditPct: number;
     majorEditPct: number;
   };
+  /**
+   * % ของ domain ที่ครูยืนยันระดับ "ต่างจาก" ที่ classifier เสนอ
+   * (นับเฉพาะ domain ที่ AI เสนอค่ามาจริง — ถ้า AI ไม่เสนอ ครูเลือกเอง ไม่นับ)
+   *
+   * ยิ่งต่ำ = AI จัดระดับแม่น · null = ยังไม่มีข้อมูลพอ (ยังไม่มี domain ที่ AI เสนอ)
+   */
+  abilityOverrideRate: number | null;
 }
 
 // ═════════════════════════════════════════════

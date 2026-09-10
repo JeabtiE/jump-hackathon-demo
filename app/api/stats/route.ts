@@ -10,6 +10,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { UsageStats } from "@/lib/types";
 
@@ -49,6 +50,16 @@ function editSeverity(original: string, final: string): "unedited" | "minor" | "
   const dist = levenshtein(a, b);
   const similarity = 1 - dist / Math.max(a.length, b.length, 1);
   return similarity >= 0.85 ? "minor" : "major";
+}
+
+/** Json column → Record<string,string> (แถวเก่าอาจเป็น null/array/scalar) */
+function asRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
 }
 
 export async function GET() {
@@ -98,6 +109,33 @@ export async function GET() {
           )
         : null;
 
+    // ── ability override rate — classifier แม่นแค่ไหน ──
+    // เทียบ abilityLevelsAiSuggested (ข้อเสนอ AI) กับ abilityLevels (คำตัดสินครู)
+    // ⚠️ แยก query/คำนวณจาก metric อื่นทั้งหมด — เป็นคนละหน่วยนับ (นับ "domain" ไม่ใช่ "แผน")
+    const assessments = await prisma.assessment.findMany({
+      where: { abilityLevelsAiSuggested: { not: Prisma.DbNull } },
+      select: { abilityLevels: true, abilityLevelsAiSuggested: true },
+    });
+
+    let overrideDenominator = 0;
+    let overrideNumerator = 0;
+    for (const a of assessments) {
+      const suggested = asRecord(a.abilityLevelsAiSuggested);
+      const confirmed = asRecord(a.abilityLevels);
+      // ⚠️ วนจาก suggested เท่านั้น — domain ที่ AI ไม่ได้เสนอ (confidence ต่ำ/ครูพิมพ์เอง)
+      //    ไม่ถือเป็น "ครูแก้ของ AI" จึงไม่นับเข้าตัวหาร
+      for (const [domain, aiLevel] of Object.entries(suggested)) {
+        if (!aiLevel) continue;
+        overrideDenominator += 1;
+        if (confirmed[domain] !== aiLevel) overrideNumerator += 1;
+      }
+    }
+
+    const abilityOverrideRate =
+      overrideDenominator > 0
+        ? Math.round((overrideNumerator / overrideDenominator) * 100)
+        : null;
+
     const editedGoals = goals.filter((g) => g.aiOriginal.trim() !== g.finalText.trim()).length;
 
     // ⚠️ นับเฉพาะรายการที่ AI เขียนเหตุผลไว้จริง
@@ -134,6 +172,7 @@ export async function GET() {
           ? Math.round((editedMedia / aiWrittenMedia.length) * 100)
           : 0,
       goalEditBreakdown,
+      abilityOverrideRate,
     };
 
     return NextResponse.json(stats);

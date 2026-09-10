@@ -171,6 +171,8 @@ async function callLLM(params: {
             disabilityType: safePayload.disabilityType,
             abilityLevels: safePayload.abilityLevels,
             strengths: safePayload.strengths,
+            // ⚠️ ใช้ค่าจาก safePayload เท่านั้น = การันตีว่าผ่าน scrubFreeText แล้ว
+            abilityFreeText: safePayload.abilityFreeText,
             gradeLevel: safePayload.gradeLevel,
             retrievedMedia,
             retrievedIndicators,
@@ -221,15 +223,25 @@ export async function POST(request: Request) {
     }
 
     // ── STEP 1: บันทึกผลการประเมิน (เก็บไว้ดูพัฒนาการข้ามปี) ──
+    // 🧾 audit 3 ชั้น เก็บพร้อมกันในแถวเดียว — ห้ามมองว่าซ้ำซ้อนแล้วตัดทิ้ง:
+    //    1. abilityFreeText          = ครูพิมพ์อะไรมา (input ดิบ)
+    //    2. abilityLevelsAiSuggested = AI ตีความเป็นระดับอะไร (ข้อเสนอ)
+    //    3. abilityLevels            = ครูยืนยันเป็นระดับอะไร (คำตัดสิน) ← retrieval ใช้ตัวนี้ตัวเดียว
+    //    เทียบ 2 กับ 3 = หลักฐานว่า classifier แม่นแค่ไหน (pattern เดียวกับ aiOriginal/finalText)
     const assessment = await prisma.assessment.create({
       data: {
         studentId: student.id,
         abilityLevels: (body.abilityLevels ?? {}) as Prisma.InputJsonObject,
+        abilityFreeText: (body.abilityFreeText ?? {}) as Prisma.InputJsonObject,
+        abilityLevelsAiSuggested: (body.abilityLevelsAiSuggested ??
+          {}) as Prisma.InputJsonObject,
         strengths: body.strengths?.trim() || null,
       },
     });
 
     // ── STEP 2: RETRIEVAL — lookup จาก mappingTable (ไม่ใช้ AI) ──
+    // ⚠️ วิ่งบน abilityLevels (ค่าที่ครูยืนยัน) เท่านั้น — ห้ามเอา abilityFreeText
+    //    หรือ abilityLevelsAiSuggested มา lookup ตรงๆ ไม่ว่ากรณีใด
     const retrievedMedia = retrieveMedia(
       student.disabilityType as never,
       body.abilityLevels ?? {}
@@ -245,11 +257,14 @@ export async function POST(request: Request) {
       : [];
 
     // ── STEP 3: GENERATION — LLM เรียบเรียงจากข้อมูลที่ verified แล้ว ──
+    // 🔒 free text ทุกช่องถูก scrubFreeText() ข้างใน buildLLMSafePayload
+    //    (strengths + abilityFreeText ทุก domain) แล้วถูก assertNoPII ซ้ำใน callLLM
     const safePayload = buildLLMSafePayload({
       disabilityType: student.disabilityType,
       gradeLevel: student.gradeLevel,
       abilityLevels: (body.abilityLevels ?? {}) as Record<string, string>,
       strengths: body.strengths,
+      abilityFreeText: body.abilityFreeText,
     });
 
     let llm: LLMOutput;

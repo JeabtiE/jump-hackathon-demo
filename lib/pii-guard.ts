@@ -43,6 +43,12 @@ export interface LLMSafePayload {
   abilityLevels: Record<string, string>;
   /** จุดเด่น/บริบทเพิ่มเติม — ครูพิมพ์เอง มีคำเตือนใน UI ว่าห้ามใส่ชื่อ */
   strengths?: string;
+  /**
+   * คำบรรยายความสามารถต่อ domain ที่ครูพิมพ์เอง (domain -> ข้อความ)
+   * — free text เหมือน strengths จึงถูก scrubFreeText() ทุกค่าก่อนเข้า payload
+   * ⚠️ ใช้เป็น context ให้ generation เท่านั้น retrieval ยังวิ่งบน abilityLevels
+   */
+  abilityFreeText?: Record<string, string>;
 }
 
 /**
@@ -56,13 +62,35 @@ export function buildLLMSafePayload(input: {
   gradeLevel?: string | null;
   abilityLevels?: Record<string, string>;
   strengths?: string | null;
+  abilityFreeText?: Record<string, string> | null;
 }): LLMSafePayload {
   return {
     disabilityType: input.disabilityType,
     gradeLevel: input.gradeLevel ?? undefined,
     abilityLevels: input.abilityLevels ?? {},
     strengths: input.strengths ? scrubFreeText(input.strengths) : undefined,
+    abilityFreeText: scrubAbilityFreeText(input.abilityFreeText),
   };
+}
+
+/**
+ * scrub ข้อความอิสระต่อ domain ทุกค่า — ค่าว่าง/ไม่ใช่ string ถูกตัดทิ้ง
+ * คืน undefined ถ้าไม่เหลืออะไร เพื่อไม่ให้ prompt มีหัวข้อว่างเปล่า
+ *
+ * ⚠️ key (domain) ไม่ scrub — เป็นค่าคงที่ในระบบ ไม่ใช่ข้อความที่ครูพิมพ์
+ */
+function scrubAbilityFreeText(
+  input?: Record<string, string> | null
+): Record<string, string> | undefined {
+  if (!input) return undefined;
+
+  const out: Record<string, string> = {};
+  for (const [domain, text] of Object.entries(input)) {
+    if (typeof text !== "string" || !text.trim()) continue;
+    out[domain] = scrubFreeText(text.trim());
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
