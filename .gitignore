@@ -46,3 +46,7 @@ yarn-error.log*
 /prisma/migrations/dev.db*
 fetch_all_branches.bat 
 mailmap.txt 
+
+# ⚠️ ไฟล์ตั้งค่า Claude Code — เก็บไว้ local เท่านั้น ไม่ commit เข้า repo
+CLAUDE.md
+.claude/

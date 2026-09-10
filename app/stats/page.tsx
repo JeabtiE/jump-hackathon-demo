@@ -43,6 +43,14 @@ export default function StatsPage() {
     },
     { label: "เป้าหมายที่ครูแก้", value: `${stats.goalEditRate}%` },
     { label: "เหตุผลเบิกสื่อที่ครูแก้", value: `${stats.mediaEditRate}%` },
+    {
+      label: "ครูแก้ระดับที่ AI จัดให้",
+      value:
+        stats.abilityOverrideRate !== null
+          ? `${stats.abilityOverrideRate}%`
+          : "—",
+      note: "ยิ่งต่ำ = AI จัดระดับแม่น — นับเฉพาะ domain ที่ AI เสนอค่ามา",
+    },
   ];
 
   return (

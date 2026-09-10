@@ -11,7 +11,12 @@ import { useEffect, useState } from "react";
 import StudentPicker from "@/components/StudentPicker";
 import AssessmentForm from "@/components/AssessmentForm";
 import PlanReview from "@/components/PlanReview";
-import type { AbilityLevels, PlanDTO, StudentSummary } from "@/lib/types";
+import type {
+  AbilityFreeText,
+  AbilityLevels,
+  PlanDTO,
+  StudentSummary,
+} from "@/lib/types";
 
 export default function Home() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
@@ -35,6 +40,10 @@ export default function Home() {
 
   async function handleGenerate(payload: {
     abilityLevels: AbilityLevels;
+    /** ข้อความอิสระที่ครูพิมพ์ — ส่งไปเป็น context/audit เท่านั้น retrieval ไม่ใช้ */
+    abilityFreeText: AbilityFreeText;
+    /** ค่าที่ AI เสนอต่อ domain ก่อนครูแก้ — audit อย่างเดียว ไม่ใช้ตัดสินใจ */
+    abilityLevelsAiSuggested: Record<string, string>;
     strengths: string;
     academicYear: string;
     term: string;

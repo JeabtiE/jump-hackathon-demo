@@ -14,7 +14,7 @@
 
 import fewShot from "@/data/fewShotExamples.json";
 import { SUBJECT_LABEL } from "./curriculum-retrieval";
-import type { AbilityLevels, IndicatorEntry, MediaEntry } from "./types";
+import type { AbilityFreeText, AbilityLevels, IndicatorEntry, MediaEntry } from "./types";
 import { getDomainLabel } from "./ability-options";
 
 const DISABILITY_LABEL: Record<string, string> = {
@@ -142,6 +142,12 @@ export function buildUserPrompt(params: {
   disabilityType: string;
   abilityLevels: AbilityLevels;
   strengths?: string;
+  /**
+   * คำบรรยายความสามารถต่อ domain ที่ครูพิมพ์เอง
+   * ⚠️ ต้องเป็นค่าที่ผ่าน buildLLMSafePayload() (scrubFreeText ทุกค่า) มาแล้วเท่านั้น
+   *    ห้ามส่งข้อความดิบจาก request เข้ามาตรงๆ
+   */
+  abilityFreeText?: AbilityFreeText;
   gradeLevel?: string;
   retrievedMedia: MediaEntry[];
   retrievedIndicators?: IndicatorEntry[];
@@ -150,6 +156,7 @@ export function buildUserPrompt(params: {
     disabilityType,
     abilityLevels,
     strengths,
+    abilityFreeText = {},
     gradeLevel,
     retrievedMedia,
     retrievedIndicators = [],
@@ -159,14 +166,34 @@ export function buildUserPrompt(params: {
   //    (ใช้ getDomainLabel เดียวกับที่ export route ใช้ — single source of truth
   //    เดียวกับ dropdown ใน AssessmentForm.tsx) เพื่อให้ AI เห็นบริบทเป็นภาษาที่มี
   //    ความหมาย ไม่ใช่ key ภาษาอังกฤษดิบๆ อย่างเดียว
+  //    ✏️ เฟส 4 — ถ้าครูพิมพ์คำบรรยายของ domain นั้นไว้ ให้แนบต่อท้ายบรรทัดเดียวกัน
+  //    เพื่อให้เป้าหมายที่ AI ร่างละเอียดตรงตัวเด็ก ไม่ใช่แค่ตามระดับ enum กว้างๆ
+  //    ⚠️ ค่าที่รับเข้ามาต้องผ่าน scrubFreeText() แล้ว (บังคับที่ buildLLMSafePayload)
   const abilityText = Object.entries(abilityLevels)
     .filter(([, v]) => v)
-    .map(([domain, level]) => `- domain: "${domain}" (${getDomainLabel(disabilityType, domain)}) — ระดับ: ${level}`)
+    .map(([domain, level]) => {
+      const line = `- domain: "${domain}" (${getDomainLabel(disabilityType, domain)}) — ระดับ: ${level}`;
+      const note = abilityFreeText[domain]?.trim();
+      return note ? `${line}\n  คำบรรยายจากครูสำหรับด้านนี้: ${note}` : line;
+    })
     .join("\n");
 
   const domainKeys = Object.entries(abilityLevels)
     .filter(([, v]) => v)
     .map(([domain]) => domain);
+
+  // มีคำบรรยายของ domain ที่ครูยืนยันระดับไว้จริงอย่างน้อย 1 ด้านหรือไม่
+  // — ไม่มีก็ไม่ต้องใส่ย่อหน้าอธิบายวิธีใช้ ลด noise ใน prompt
+  const hasFreeTextNote = domainKeys.some((d) => abilityFreeText[d]?.trim());
+
+  const freeTextGuide = hasFreeTextNote
+    ? `
+บรรทัด "คำบรรยายจากครูสำหรับด้านนี้" คือสิ่งที่ครูสังเกตเห็นจากนักเรียนคนนี้จริง
+ให้ใช้เป็นรายละเอียดประกอบการเขียนจุดเด่น/จุดที่ควรพัฒนา/เป้าหมายของ domain นั้น
+ให้ตรงตัวนักเรียนมากขึ้น แต่ยังยึด "ระดับ" ที่ครูยืนยันไว้เป็นหลักเสมอ — ถ้าคำบรรยาย
+ขัดกับระดับที่ยืนยัน ให้ยึดระดับที่ยืนยัน และห้ามสรุปเกินกว่าที่ครูเขียนไว้
+`
+    : "";
 
   const mediaText = retrievedMedia
     .map(
@@ -191,6 +218,7 @@ ${gradeLevel ? `ระดับชั้น: ${gradeLevel}` : ""}
 
 ระดับความสามารถปัจจุบัน (ต้อง gen domainSections ให้ครบทุก domain ที่ระบุด้านล่างนี้ — รวม ${domainKeys.length} domain):
 ${abilityText || "- ไม่ได้ระบุ"}
+${freeTextGuide}
 
 ${strengths ? `บริบทเพิ่มเติมจากครู (จุดเด่น/สิ่งที่ทำได้ ระบุตอนสร้างนักเรียน — ใช้เป็นข้อมูลประกอบ ไม่ผูกกับ domain ใดโดยเฉพาะ): ${strengths}` : ""}
 

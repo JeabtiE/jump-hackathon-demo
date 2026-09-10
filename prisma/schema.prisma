@@ -84,7 +84,14 @@ model Assessment {
   student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   /// { "reading": "cannot_spell_2syllable", "communication": "no_speech_gesture_only" }
+  /// ⚠️ ค่าที่ครูยืนยันแล้ว — เป็นค่าเดียวที่ retrieval ใช้ (ห้ามใช้ค่าที่ AI เสนอแทน)
   abilityLevels Json
+  /// ข้อความอิสระที่ครูพิมพ์ต่อ domain { "reading": "อ่านคำ 2 พยางค์ไม่ได้..." }
+  /// ⚠️ ไม่ใช่ PII ZONE — ไหลเข้า LLM ได้ (generation + audit) แต่ต้องผ่าน scrubFreeText() ก่อน
+  abilityFreeText Json?
+  /// ค่า enum ที่ AI เสนอจาก abilityFreeText ก่อนครูแก้ — audit แบบเดียวกับ aiOriginal
+  /// ห้ามเขียนทับหลังบันทึกครั้งแรก และห้ามใช้แทน abilityLevels
+  abilityLevelsAiSuggested Json?
   /// จุดเด่น/สิ่งที่ทำได้ — ⚠️ ค่ารวมทั้งแผน (legacy) ตั้งแต่มี PlanDomainSection
   /// แล้ว จุดเด่น/จุดที่ควรพัฒนาแบบละเอียดต่อ domain ย้ายไปอยู่ที่นั่นแทน
   /// ฟิลด์นี้ยังคงไว้เพื่อ backward-compat กับแผนเก่า และเป็น fallback

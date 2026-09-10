@@ -114,6 +114,81 @@ check('เคส 4: personalizeForExport แทนที่ "นักเรี�
   );
 });
 
+// ── เคส 5: PII ที่ครูเผลอพิมพ์ในช่องบรรยายต่อ domain ต้องถูกล้างก่อนถึง LLM ──
+// ⚠️ เคสนี้คือกำแพงของเฟส 4: abilityFreeText เป็น free text ช่องเดียวที่ไหลเข้า
+//    generation ได้ ถ้ามันหลุด = ชื่อเด็กออกนอกระบบ ห้ามลบเทสนี้
+check("เคส 5: PII ใน abilityFreeText ถูก scrub ครบทุก domain", () => {
+  const payload = buildLLMSafePayload({
+    disabilityType: "autism",
+    gradeLevel: "ป.1",
+    abilityLevels: { reading: "cannot_spell_2syllable", behavior: "short_attention" },
+    abilityFreeText: {
+      reading: "เด็กชายสมชาย ใจดี อ่านคำ 2 พยางค์ไม่ได้ ต้องชี้ทีละตัว",
+      behavior: "นั่งได้ไม่เกิน 5 นาที แม่ชื่อนางสมศรี ใจดี โทร 081-234-5678 เลข 1-5799-01234-56-7",
+    },
+  });
+
+  assertNoPII(payload, "payload ที่มี abilityFreeText"); // ถ้า throw ตรงนี้ = ไม่ผ่าน
+
+  const texts = payload.abilityFreeText ?? {};
+  const joined = JSON.stringify(texts);
+  console.log(`   หลัง scrub: ${texts.behavior}`);
+
+  assert(!joined.includes("สมชาย"), "ชื่อเด็กยังหลงเหลือใน abilityFreeText");
+  assert(!joined.includes("สมศรี"), "ชื่อผู้ปกครองยังหลงเหลือใน abilityFreeText");
+  assert(!joined.includes("เด็กชาย"), "คำนำหน้าเด็กยังหลงเหลือใน abilityFreeText");
+  assert(!joined.includes("081-234-5678"), "เบอร์โทรยังหลงเหลือใน abilityFreeText");
+  assert(
+    !joined.includes("1-5799-01234-56-7"),
+    "เลขบัตรประชาชนยังหลงเหลือใน abilityFreeText"
+  );
+
+  // ล้างเกินก็ไม่ได้ — เนื้อหาที่ครูตั้งใจบอกต้องรอดไปถึง LLM ไม่งั้นเป้าหมายจะกว้างเหมือนเดิม
+  assert(
+    texts.reading?.includes("อ่านคำ 2 พยางค์ไม่ได้"),
+    `เนื้อหาจริงของ reading หายไป (ล้างเกิน): ${texts.reading}`
+  );
+  assert(
+    texts.behavior?.includes("ไม่เกิน 5 นาที"),
+    `เนื้อหาจริงของ behavior หายไป (ล้างเกิน): ${texts.behavior}`
+  );
+
+  // key ต้องเป็น domain เดิมครบ — ไม่งั้น prompt จับคู่คำบรรยายกับ domain ผิด
+  assert(
+    JSON.stringify(Object.keys(texts)) === JSON.stringify(["reading", "behavior"]),
+    `key ของ abilityFreeText เพี้ยน: ${Object.keys(texts).join(", ")}`
+  );
+});
+
+// ── เคส 6: ค่าที่ไม่มีเนื้อหาต้องไม่ถูกส่งต่อ (กัน prompt มีหัวข้อว่างเปล่า) ──
+check("เคส 6: abilityFreeText ที่ว่าง/ไม่ใช่ string ถูกตัดทิ้ง", () => {
+  const base = {
+    disabilityType: "autism",
+    abilityLevels: { reading: "cannot_spell_2syllable" },
+  };
+
+  const withBlanks = buildLLMSafePayload({
+    ...base,
+    abilityFreeText: { reading: "อ่านคำ 2 พยางค์ไม่ได้", writing: "   ", math: "" },
+  });
+  assert(
+    JSON.stringify(Object.keys(withBlanks.abilityFreeText ?? {})) ===
+      JSON.stringify(["reading"]),
+    `domain ที่ครูไม่ได้พิมพ์ยังหลุดมา: ${Object.keys(withBlanks.abilityFreeText ?? {}).join(", ")}`
+  );
+
+  // ไม่ส่งมาเลย / ส่งมาแต่ว่างทั้งก้อน → undefined ไม่ใช่ {} (prompt จะได้ไม่ขึ้นหัวข้อเปล่า)
+  assert(
+    buildLLMSafePayload(base).abilityFreeText === undefined,
+    "ไม่ส่ง abilityFreeText มาเลย แต่ payload ไม่ได้เป็น undefined"
+  );
+  assert(
+    buildLLMSafePayload({ ...base, abilityFreeText: { reading: "  " } })
+      .abilityFreeText === undefined,
+    "ส่งมาแต่ว่างทั้งก้อน แต่ payload ไม่ได้เป็น undefined"
+  );
+});
+
 // ── สรุปผล ──
 console.log(`\nสรุป: ผ่าน ${passed}/${passed + failed} เคส`);
 if (failed > 0) {
