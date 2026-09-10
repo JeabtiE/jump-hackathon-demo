@@ -111,6 +111,12 @@ const planReq = {
     behavior: "frequent_off_task",
     selfHelp: "needs_prompting",
   },
+  // audit ของ classifier — communication ครูยืนยันตรงกับที่ AI เสนอ,
+  // behavior ครูแก้เป็นค่าอื่น → abilityOverrideRate ต้องอยู่ระหว่าง 1-99%
+  abilityLevelsAiSuggested: {
+    communication: "no_speech_gesture_only",
+    behavior: "difficulty_transition",
+  },
   // จงใจใส่ชื่อเด็ก (คำนำหน้า "เด็กชาย") + เบอร์โทร เพื่อดูว่า scrubFreeText กรองออก
   strengths:
     "เด็กชายทดสอบ ระบบ ชอบฟังเพลงและมีสมาธิดีเมื่อทำกิจกรรมศิลปะ ติดต่อ 0812345678",
@@ -122,22 +128,29 @@ const planReq = {
   meetingDate: "2026-07-28",
 };
 
+/**
+ * เป้าหมายทั้งแผนแบบแบน — PlanDTO เก็บ goals ซ้อนใต้ domainSections
+ * (ตั้งแต่ 17 ส.ค. 2569 ที่ PlanGoal ย้ายไปผูกกับ PlanDomainSection)
+ */
+const goalsOf = (p) => (p.domainSections ?? []).flatMap((sec) => sec.goals);
+
 const planRes = await call("POST", "/api/plans", { body: planReq, expect: 201 });
 const plan = await planRes.json();
+const planGoals = goalsOf(plan);
 
 console.log(`✅ สร้างแผนสำเร็จ: id=${plan.id} status=${plan.status}`);
-console.log(`   goals: ${plan.goals.length} ข้อ`);
-plan.goals.forEach((g, i) => console.log(`     ${i + 1}. ${g.finalText.slice(0, 70)}...`));
+console.log(`   domainSections: ${plan.domainSections.length} ด้าน / goals รวม ${planGoals.length} ข้อ`);
+planGoals.forEach((g, i) => console.log(`     ${i + 1}. ${g.finalText.slice(0, 70)}...`));
 console.log(`   media: ${plan.media.length} รายการ`);
 plan.media.forEach((m) => console.log(`     - [บัญชี ${m.category}] ${m.item}`));
 
 // mock ควรได้ media จาก mappingTable: 3 (communication) + 3 (behavior) + 2 (selfHelp) รายการ (ก่อน dedupe)
-if (plan.goals.length === 0) fail("แผนที่ได้ไม่มี goals เลย");
+if (planGoals.length === 0) fail("แผนที่ได้ไม่มี goals เลย");
 if (plan.media.length === 0)
   fail("retrieval ไม่เจอสื่อเลย — เช็คว่า abilityLevels key ตรงกับ mappingTable.json ไหม");
 
 // ตรวจว่า goal ไม่มีชื่อเด็กปน (PII boundary)
-const allGoalText = plan.goals.map((g) => g.finalText).join(" ");
+const allGoalText = planGoals.map((g) => g.finalText).join(" ");
 if (allGoalText.includes("ทดสอบ ระบบ")) {
   fail("พบชื่อเด็กใน goal text — PII หลุดผ่าน boundary!");
 }
@@ -151,14 +164,14 @@ const getRes = await call("GET", `/api/plans/${plan.id}`);
 const fetched = await getRes.json();
 if (fetched.id !== plan.id) fail("id ที่อ่านกลับไม่ตรงกับที่สร้าง", fetched);
 console.log(
-  `✅ อ่านกลับสำเร็จ: studentCode=${fetched.studentCode} goals=${fetched.goals.length} media=${fetched.media.length} status=${fetched.status}`
+  `✅ อ่านกลับสำเร็จ: studentCode=${fetched.studentCode} goals=${goalsOf(fetched).length} media=${fetched.media.length} status=${fetched.status}`
 );
 
 // ═════════════ ขั้นที่ 4: แก้ไข + finalize ═════════════
 
 step(`PATCH /api/plans/${plan.id} — แก้ finalText ของ goal แรก + finalize`);
 
-const firstGoal = fetched.goals[0];
+const firstGoal = goalsOf(fetched)[0];
 const editedText = firstGoal.finalText + " (ครูแก้ไขแล้ว)";
 
 const patchRes = await call("PATCH", `/api/plans/${plan.id}`, {
@@ -169,8 +182,8 @@ const patchRes = await call("PATCH", `/api/plans/${plan.id}`, {
 });
 const patched = await patchRes.json();
 
-const patchedGoal = patched.goals.find((g) => g.id === firstGoal.id);
-if (!patchedGoal) fail("ไม่เจอ goal ที่แก้ใน response", patched.goals);
+const patchedGoal = goalsOf(patched).find((g) => g.id === firstGoal.id);
+if (!patchedGoal) fail("ไม่เจอ goal ที่แก้ใน response", goalsOf(patched));
 if (patchedGoal.finalText !== editedText)
   fail("finalText ไม่ถูกอัปเดต", { expected: editedText, got: patchedGoal.finalText });
 if (patchedGoal.aiOriginal === patchedGoal.finalText)
@@ -199,7 +212,17 @@ if (stats.goalEditRate <= 0)
   fail("goalEditRate ยังเป็น 0 ทั้งที่เพิ่งแก้ goal ไป — การนับ isEdited อาจพัง", stats);
 if (stats.avgDurationSeconds === null)
   fail("avgDurationSeconds เป็น null ทั้งที่มีแผน finalized แล้ว", stats);
-console.log(`✅ สถิติขยับถูกต้อง: goalEditRate=${stats.goalEditRate}% avgDurationSeconds=${stats.avgDurationSeconds}`);
+if (typeof stats.abilityOverrideRate !== "number")
+  fail(
+    "abilityOverrideRate ควรเป็นตัวเลข หลังส่ง abilityLevelsAiSuggested ไปแล้ว (null = ไม่เจอ domain ที่ AI เสนอ)",
+    stats
+  );
+if (stats.abilityOverrideRate < 1 || stats.abilityOverrideRate > 99)
+  fail(
+    "abilityOverrideRate ควรอยู่ระหว่าง 1-99% (มีทั้ง domain ที่ตรงและที่ครูแก้) — การเทียบ suggested vs confirmed อาจพัง",
+    stats
+  );
+console.log(`✅ สถิติขยับถูกต้อง: goalEditRate=${stats.goalEditRate}% avgDurationSeconds=${stats.avgDurationSeconds} abilityOverrideRate=${stats.abilityOverrideRate}%`);
 
 // ═════════════ ขั้นที่ 6: export .docx ═════════════
 

@@ -64,10 +64,28 @@ function makeMedia(overrides = {}) {
   };
 }
 
-function makePlan(overrides = {}) {
+/**
+ * section ครอบ goal — buildConsistencyWarnings อ่าน plan.domainSections
+ * (ตั้งแต่ 17 ส.ค. 2569 ที่ PlanGoal ย้ายไปผูกกับ PlanDomainSection)
+ */
+function makeSection(overrides = {}) {
+  return {
+    id: "s1",
+    domain: "reading",
+    goals: [makeGoal()],
+    ...overrides,
+  };
+}
+
+/**
+ * เคสส่วนใหญ่สนใจแค่ goal จึงยังเขียน override เป็น `goals: [...]` แบนๆ ให้อ่านง่าย
+ * แล้วห่อเป็น 1 domainSection ตรงนี้จุดเดียว — ถ้าเคสไหนต้องการหลาย section
+ * ให้ override `domainSections` มาตรงๆ แทน
+ */
+function makePlan({ goals, domainSections, ...overrides } = {}) {
   return {
     academicYear: "2569",
-    goals: [makeGoal()],
+    domainSections: domainSections ?? [makeSection(goals ? { goals } : {})],
     media: [makeMedia()],
     ...overrides,
   };
