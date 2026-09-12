@@ -16,7 +16,9 @@ import { authConfig } from "./auth.config";
 const { auth } = NextAuth(authConfig);
 
 /** path ที่ต้องเข้าได้ตอนยังไม่ล็อกอิน ไม่งั้นจะ redirect วนไม่จบ */
-const PUBLIC_PATHS = ["/auth", "/api/auth"];
+// ⚠️ /privacy ต้องอยู่ในนี้เสมอ — Google ขอเปิดดูหน้านโยบายความเป็นส่วนตัว
+//    ตอนตรวจ OAuth consent screen ถ้าโดนเด้งไปหน้าล็อกอิน จะ publish ไม่ผ่าน
+const PUBLIC_PATHS = ["/auth", "/api/auth", "/privacy"];
 
 export default auth((request) => {
   const { pathname } = request.nextUrl;
