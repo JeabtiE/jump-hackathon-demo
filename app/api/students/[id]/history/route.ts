@@ -15,12 +15,16 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId, unauthorizedResponse } from "@/lib/auth-guard";
 import type { StudentHistoryDTO } from "@/lib/types";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
-    const student = await prisma.student.findUnique({
-      where: { id: params.id },
+    const userId = await requireUserId();
+
+    // 🔒 route นี้คืน fullName (PII) + ประวัติข้ามปีทั้งหมด — ต้องกรองเจ้าของเสมอ
+    const student = await prisma.student.findFirst({
+      where: { id: params.id, userId },
       include: {
         assessments: {
           orderBy: { assessedAt: "asc" },
@@ -80,6 +84,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
     return NextResponse.json(dto);
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("GET /api/students/[id]/history failed:", err);
     return NextResponse.json({ error: "ดึงประวัติพัฒนาการไม่สำเร็จ" }, { status: 500 });
   }

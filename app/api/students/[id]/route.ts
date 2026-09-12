@@ -8,7 +8,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { requireUserId, unauthorizedResponse } from "@/lib/auth-guard";
 import type { StudentDetail, UpdateStudentRequest } from "@/lib/types";
 
 function clean(v?: string | null): string | null | undefined {
@@ -19,7 +21,11 @@ function clean(v?: string | null): string | null | undefined {
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
-    const s = await prisma.student.findUnique({ where: { id: params.id } });
+    const userId = await requireUserId();
+
+    // 🔒 userId อยู่ใน where ตั้งแต่แรก — ของครูคนอื่นจะ "ไม่เจอ" โดยธรรมชาติ
+    //    ตอบ 404 ไม่ใช่ 403 (ดูเหตุผลใน lib/auth-guard.ts)
+    const s = await prisma.student.findFirst({ where: { id: params.id, userId } });
     if (!s) return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 404 });
 
     const detail: StudentDetail = {
@@ -48,6 +54,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
     return NextResponse.json(detail);
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("GET /api/students/[id] failed:", err);
     return NextResponse.json({ error: "ดึงข้อมูลนักเรียนไม่สำเร็จ" }, { status: 500 });
   }
@@ -55,13 +64,33 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
+    const userId = await requireUserId();
+
     const body = (await request.json()) as UpdateStudentRequest;
 
-    const existing = await prisma.student.findUnique({ where: { id: params.id } });
+    const existing = await prisma.student.findFirst({
+      where: { id: params.id, userId },
+      select: { id: true },
+    });
     if (!existing) return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 404 });
 
+    // PATCH แก้ code ได้ จึงต้องเช็คซ้ำแบบเดียวกับตอน POST
+    // (เดิมไม่เคยเช็คเลย — อาศัย unique ทั้ง DB แล้วปล่อยให้ P2002 หลุดเป็น 500)
+    // id: { not: ... } เพื่อไม่ให้แถวตัวเองนับเป็นคู่ที่ชนกัน
+    if (body.code !== undefined) {
+      const clash = await prisma.student.findFirst({
+        where: { userId, code: body.code.trim(), id: { not: existing.id } },
+        select: { id: true },
+      });
+      if (clash) {
+        return NextResponse.json({ error: "รหัสนี้มีอยู่แล้ว กรุณาใช้รหัสอื่น" }, { status: 409 });
+      }
+    }
+
+    // ⚠️ update ด้วย id ล้วนได้ เพราะผ่านการยืนยันเจ้าของมาแล้วบรรทัดบน
+    //    และ body ไม่มีทางเขียนทับ userId — ไม่ได้อยู่ใน data ด้านล่างเลย
     const updated = await prisma.student.update({
-      where: { id: params.id },
+      where: { id: existing.id },
       data: {
         ...(body.code !== undefined ? { code: body.code.trim() } : {}),
         ...(body.disabilityType !== undefined ? { disabilityType: body.disabilityType } : {}),
@@ -89,6 +118,14 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     return NextResponse.json({ id: updated.id, code: updated.code });
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
+    // ตาข่ายรองรับกรณีแข่งกันเขียน เหมือน POST /api/students
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json({ error: "รหัสนี้มีอยู่แล้ว กรุณาใช้รหัสอื่น" }, { status: 409 });
+    }
+
     console.error("PATCH /api/students/[id] failed:", err);
     return NextResponse.json({ error: "บันทึกการแก้ไขไม่สำเร็จ" }, { status: 500 });
   }
@@ -97,9 +134,26 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 /** DELETE — ลบข้อมูลนักเรียนและแผนทั้งหมด (สิทธิ์ในการลบข้อมูลตาม PDPA) */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   try {
-    await prisma.student.delete({ where: { id: params.id } });
+    const userId = await requireUserId();
+
+    // ⚠️ deleteMany ไม่ใช่ delete — delete รับได้แต่ unique field จึงใส่ userId
+    //    ลงเงื่อนไขไม่ได้ ส่วน deleteMany รับ where แบบเต็มได้ และคืน count
+    //    มาให้ตรวจว่าลบอะไรไปจริงไหม (ของเดิมไม่เช็ค existence เลย ยิงมั่วก็ได้ 200)
+    // 🔥 การลบนี้ cascade ไปถึง Assessment / Plan / DomainSection / Goal / Media ทั้งหมด
+    const { count } = await prisma.student.deleteMany({
+      where: { id: params.id, userId },
+    });
+
+    // ลบไม่โดนแถวไหน = ไม่มี id นี้ หรือมีแต่ไม่ใช่ของเรา → ตอบ 404 เหมือนกันทั้งสองกรณี
+    if (count === 0) {
+      return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 404 });
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("DELETE /api/students/[id] failed:", err);
     return NextResponse.json({ error: "ลบข้อมูลไม่สำเร็จ" }, { status: 500 });
   }

@@ -3,8 +3,8 @@
 เอกสารนี้อธิบายลำดับคำสั่งที่ต้องรันด้วยมือ หลังจาก schema มี `User / Account / Session /
 VerificationToken / AllowedEmail` และ `Student.userId` แล้ว
 
-> ⚠️ ยังไม่มีใครรันคำสั่งไหนให้ — ณ ตอนนี้แก้แค่ไฟล์ `prisma/schema.prisma` กับเพิ่ม
-> `scripts/backfill-owner.ts` เท่านั้น DB จริงยังไม่เปลี่ยน
+> 📍 **สถานะปัจจุบัน**: ขั้นที่ 1–2 รันไปแล้ว (DB มี 4 แถว มีเจ้าของครบ ไม่มี `userId` เป็น null)
+> `prisma/schema.prisma` แก้เป็น **ขั้นที่ 3 เรียบร้อยแล้ว** — เหลือแค่รัน `npm run db:push` (ขั้นที่ 4)
 
 ---
 
@@ -48,9 +48,11 @@ BACKFILL_OWNER_EMAIL=you@example.com node --env-file=.env scripts/backfill-owner
 
 **🛑 ต้องได้ `ยังไม่มีเจ้าของหลังรัน : 0 แถว` เท่านั้น** ถ้าไม่ใช่ หยุด อย่าไปขั้นที่ 3
 
-### 3. แก้ `prisma/schema.prisma` ด้วยมือ — เอา `?` ออก 2 ที่
+### 3. แก้ `prisma/schema.prisma` — ✅ ทำแล้ว
 
-ใน `model Student` บล็อก `OWNERSHIP`:
+แก้ไป 2 อย่างพร้อมกันใน `model Student`:
+
+**3.1 `userId` เป็น required**
 
 ```diff
 - userId String?
@@ -59,13 +61,40 @@ BACKFILL_OWNER_EMAIL=you@example.com node --env-file=.env scripts/backfill-owner
 + user   User    @relation(fields: [userId], references: [id], onDelete: Restrict)
 ```
 
-ที่เหลือเหมือนเดิมทุกตัวอักษร และลบคอมเมนต์ "optional ชั่วคราวเท่านั้น" ทิ้งได้เลย
+**3.2 `code` ไม่ unique ทั้ง DB อีกต่อไป — unique แค่ภายในครูคนเดียวกัน**
 
-### 4. บังคับ required ลง DB จริง
+```diff
+- code String @unique
++ code String
+...
++ @@unique([userId, code])
+```
+
+ครูคนละคนต้องใช้รหัสนักเรียนซ้ำกันได้ — "A-01" ของครู ก กับ "A-01" ของครู ข
+เป็นคนละคนและไม่ควรชนกัน
+
+> ⚠️ **3.2 ทำได้ก็ต่อเมื่อ 3.1 เสร็จแล้วเท่านั้น** ถ้า `userId` ยัง nullable อยู่
+> Postgres ถือว่า `NULL` ไม่เท่ากับ `NULL` → แถวที่ไม่มีเจ้าของจะใส่ `code` ซ้ำกันได้
+> ไม่จำกัด constraint จะไม่ทำงานจริงตามที่ตั้งใจ
+
+### 4. บังคับลง DB จริง ← **เหลือแค่ขั้นนี้**
 
 ```bash
 npm run db:push
 ```
+
+Prisma จะทำ 2 อย่าง: เปลี่ยน `userId` เป็น `NOT NULL` และสลับ unique constraint
+ของ `code` เป็น composite `(userId, code)`
+
+ตรวจแล้วว่าข้อมูลปัจจุบันพร้อม — ถ้า `db:push` ล้ม มีแค่ 2 สาเหตุ:
+
+| error | แปลว่า | แก้ยังไง |
+| --- | --- | --- |
+| `column "userId" contains null values` | ยังมีนักเรียนไม่มีเจ้าของ | กลับไปรันขั้นที่ 2 |
+| `could not create unique index` | ครูคนเดียวกันมีรหัสซ้ำกันอยู่ | แก้รหัสที่ซ้ำใน Prisma Studio ก่อน |
+
+> ⚠️ ปิด `npm run dev` และ Prisma Studio ก่อนรัน — ทั้งคู่ล็อกไฟล์ engine ของ Prisma ไว้
+> ทำให้ `prisma generate` ล้มด้วย `EPERM ... query_engine-windows.dll.node`
 
 ### 5. เช็คว่ายังคอมไพล์ผ่าน
 
@@ -84,8 +113,11 @@ npm run build
   จึงไม่ต้องเพิ่มใน `PII_FIELDS` และ `buildLLMSafePayload()` เป็น whitelist อยู่แล้ว ไม่รั่วไป LLM
 - **ไม่แตะ PII ZONE 16 fields และคู่ `aiXxx`/`finalXxx` ทั้งหมด** — ยืนยันด้วย `git diff -w` แล้วว่าไม่มีบรรทัดไหนถูกแก้
 - **ไม่ใส่ `model Authenticator`** (WebAuthn/passkey ของ Auth.js) — เพิ่มทีหลังได้ถ้าจะใช้
-- **ยังไม่เขียน query filtering** — ตอนนี้ทุก route ยัง query ข้ามเจ้าของได้เหมือนเดิม
-  การกรองด้วย `where: { userId }` เป็นงานถัดไป ไม่ใช่ของ migration นี้
+- **ไม่ลบ `@@index([userId])`** ทั้งที่ `@@unique([userId, code])` สร้าง index ที่มี `userId`
+  เป็นคอลัมน์นำอยู่แล้ว (ซ้ำซ้อนทางเทคนิค) — ปล่อยไว้ก่อน ลบทีหลังได้ถ้าอยากประหยัดพื้นที่ index
+
+> ✅ **query filtering ทำเสร็จแล้ว** — ทุก route ใน `app/api/**` กรองด้วย `userId` ผ่าน
+> `lib/auth-guard.ts` เรียบร้อย ดูตารางสรุปเงื่อนไขการกรองของแต่ละ route ได้ที่ท้ายเอกสารนี้
 
 `onDelete: Restrict` บน `Student.user` ตั้งใจเลือกแบบนี้ — ลบบัญชีครูต้องไม่ลากข้อมูล
 นักเรียนหายตามไปด้วย ต้องย้ายเจ้าของก่อนถึงจะลบ `User` ได้
@@ -212,3 +244,35 @@ Vercel → โปรเจกต์ → **Settings** → **Environment Variables
 ยังไม่มีหน้า UI ให้เพิ่ม (เป็นงาน Phase 3) ตอนนี้ใช้ `npm run db:studio` เปิด Prisma Studio
 แล้ว insert แถวลงตาราง `AllowedEmail` — **ใส่อีเมลเป็นตัวพิมพ์เล็กทั้งหมด**
 เพราะ `callbacks.signIn` เทียบแบบ lowercase
+
+---
+
+## ตารางสรุป: แต่ละ route กรองด้วยอะไร
+
+ทุก route เรียก `requireUserId()` จาก [`lib/auth-guard.ts`](lib/auth-guard.ts) เป็นบรรทัดแรก
+(ยกเว้น `app/api/auth/**` ซึ่งเป็นของ Auth.js เอง)
+
+| Route | Method | เงื่อนไขที่ใช้กรอง | ไม่ผ่าน |
+| --- | --- | --- | --- |
+| `/api/students` | GET | `where: { userId }` | 401 |
+| `/api/students` | POST | `userId` จาก session เท่านั้น · เช็ค code ซ้ำ `{ userId, code }` | 401 · 409 |
+| `/api/students/[id]` | GET | `findFirst({ id, userId })` | 401 · 404 |
+| `/api/students/[id]` | PATCH | ยืนยันเจ้าของก่อน · เช็ค code ซ้ำในขอบเขตตัวเอง | 401 · 404 · 409 |
+| `/api/students/[id]` | DELETE | `deleteMany({ id, userId })` → `count === 0` | 401 · 404 |
+| `/api/students/[id]/history` | GET | `findFirst({ id, userId })` | 401 · 404 |
+| `/api/plans` | GET | `{ student: { userId }, ...(studentId && { studentId }) }` | 401 |
+| `/api/plans` | POST | ยืนยันเจ้าของ **ก่อนยิง LLM** | 401 · 404 |
+| `/api/plans/[id]` | GET | `{ id, student: { userId } }` | 401 · 404 |
+| `/api/plans/[id]` | PATCH | scope เจ้าของ + ทุก section/goal/media id ต้องอยู่ในแผนนี้ | 401 · 404 · 400 |
+| `/api/plans/[id]/export` | GET | `{ id, student: { userId } }` | 401 · 404 |
+| `/api/assess/classify` | POST | มี session เท่านั้น (ไม่แตะ DB) | 401 |
+| `/api/stats` | GET | `mine` กรอง `student.userId` · `all` ไม่กรอง | 401 |
+
+**ตอบ 404 เสมอ ไม่มี 403 เลย** — 403 เท่ากับยืนยันว่า id นั้นมีอยู่จริงในระบบ
+เดาไล่ id ไปเรื่อยๆ ก็นับจำนวนนักเรียนทั้งระบบได้ วิธีบังคับกฎนี้คือใส่ `userId`
+ลงใน `where` ตั้งแต่แรก ผลลัพธ์จึงเป็น "ไม่เจอ" โดยธรรมชาติ
+
+### ยังไม่ได้ทำ
+
+- **quota ต่อคนของ `/api/assess/classify`** — ครูที่ล็อกอินแล้วยังยิง LLM ได้ไม่จำกัด
+- **หน้า UI สำหรับเพิ่ม `AllowedEmail`** — ตอนนี้ต้อง insert ผ่าน Prisma Studio

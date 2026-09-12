@@ -32,7 +32,11 @@ datasource db {
 model Student {
   id   String @id @default(cuid())
   /// รหัสอ้างอิงที่ครูตั้งเอง เช่น "A-01" — ใช้แสดงผลในระบบและส่งไป LLM ได้
-  code String @unique
+  ///
+  /// ⚠️ ไม่ unique ทั้งระบบแล้ว — unique แค่ภายในครูคนเดียวกัน (@@unique([userId, code]) ท้าย model)
+  /// ครูคนละคนตั้ง "A-01" ซ้ำกันเป็นเรื่องปกติ ไม่ควรเป็นความผิดของใคร
+  /// → ห้ามใช้ findUnique({ where: { code } }) อีก ต้องเป็น findFirst({ where: { userId, code } })
+  code String
 
   // ══════════════ 🔒 PII ZONE — ห้ามส่งไป LLM API ══════════════
   // ใช้เฉพาะตอน export เอกสาร .docx เท่านั้น
@@ -77,17 +81,18 @@ model Student {
   //    ทุกอันไต่ผ่าน Student เอา (plan.student.userId) — ถ้าใส่ซ้ำหลายที่ วันหนึ่งมันจะ
   //    ไม่ตรงกันแล้วไม่มีใครรู้ว่าอันไหนถูก
   //
-  // ⚠️ optional ชั่วคราวเท่านั้น — เพื่อให้ db:push ผ่านทั้งที่แถวเก่ายังไม่มีเจ้าของ
-  //    ลำดับ: db:push → scripts/backfill-owner.ts → เปลี่ยนเป็น required → db:push ซ้ำ
-  //    (ดู MIGRATION-NOTES.md) ตราบใดที่ยังเป็น String? = ยังกรองข้อมูลตามเจ้าของไม่ได้จริง
+  // ✅ required แล้ว — นักเรียนทุกแถวต้องมีเจ้าของเสมอ ไม่มีข้อยกเว้น
+  //    (ผ่าน scripts/backfill-owner.ts มาแล้ว ดู MIGRATION-NOTES.md)
+  //    ⚠️ ห้ามเปลี่ยนกลับเป็น String? — แถวที่ userId เป็น null จะไม่ตรงกับ
+  //    where ของใครเลย กลายเป็นข้อมูลที่ไม่มีใครเข้าถึงได้ แต่ยังนั่งอยู่ใน DB
   //
   // 🔒 ไม่ใช่ PII (เป็น FK ภายในระบบ ไม่ได้ระบุตัวตนนักเรียน) → ไม่ต้องแตะ PII_FIELDS
   //    ใน lib/pii-guard.ts และ buildLLMSafePayload เป็น whitelist อยู่แล้ว จึงไม่รั่วไป LLM
   //
   // ⚠️ onDelete: Restrict โดยตั้งใจ — ลบบัญชีครูต้องไม่ลากข้อมูลนักเรียนหายตามไปด้วย
   //    ต้องย้ายเจ้าของก่อนถึงจะลบ User ได้
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
   // ══════════════ จบ OWNERSHIP ══════════════
 
   assessments Assessment[]
@@ -95,6 +100,10 @@ model Student {
 
   @@index([disabilityType])
   @@index([userId])
+  /// รหัสนักเรียนซ้ำข้ามครูได้ แต่ห้ามซ้ำภายในครูคนเดียวกัน
+  /// ⚠️ ใช้ได้เพราะ userId เป็น required แล้วเท่านั้น — ถ้า userId ยัง nullable
+  ///    Postgres ถือว่า NULL ไม่เท่ากับ NULL แถวที่ไม่มีเจ้าของจะซ้ำได้ไม่จำกัด
+  @@unique([userId, code])
 }
 
 // ── การประเมินความสามารถ (แยกจาก Plan เพื่อเก็บพัฒนาการข้ามปี) ──

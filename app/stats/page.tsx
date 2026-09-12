@@ -1,72 +1,60 @@
 /**
  * หน้าสถิติ — เครื่องเก็บหลักฐานสำหรับใบสมัคร
  * ระบบคำนวณให้อัตโนมัติ ไม่ต้องนั่งจดมือ
+ *
+ * ✏️ แยกเป็น 2 ชุด: "ของฉัน" (ครูที่ล็อกอินอยู่) กับ "ทั้งระบบ" (ยอดรวมทุกคน)
+ *    ชุดทั้งระบบเป็นตัวเลขล้วน ไม่มีชื่อครูหรือข้อมูลนักเรียนคนใดเลย
  */
 
 "use client";
 
 import { useEffect, useState } from "react";
-import type { UsageStats } from "@/lib/types";
+import type { PlanUsageMetrics, UsageStats } from "@/lib/types";
 
-export default function StatsPage() {
-  const [stats, setStats] = useState<UsageStats | null>(null);
-
-  useEffect(() => {
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {});
-  }, []);
-
-  if (!stats) {
-    return (
-      <main className="mx-auto max-w-3xl p-8 text-slate-400">กำลังโหลด...</main>
-    );
-  }
-
-  const cards = [
-    { label: "แผนทั้งหมด", value: `${stats.totalPlans} ฉบับ` },
-    { label: "ยืนยันแล้ว", value: `${stats.finalizedPlans} ฉบับ` },
+function buildCards(m: PlanUsageMetrics) {
+  return [
+    { label: "แผนทั้งหมด", value: `${m.totalPlans} ฉบับ` },
+    { label: "ยืนยันแล้ว", value: `${m.finalizedPlans} ฉบับ` },
     {
       label: "เวลาเฉลี่ยต่อแผน (ร่างแผนทั้ง workflow)",
-      value: stats.avgDraftingSeconds
-        ? `${Math.round(stats.avgDraftingSeconds / 60)} นาที`
+      value: m.avgDraftingSeconds
+        ? `${Math.round(m.avgDraftingSeconds / 60)} นาที`
         : "-",
       note: "นับตั้งแต่กรอกแบบประเมินเสร็จ → AI ร่าง → ครูแก้/เลือก → ครูกดยืนยัน — ใช้ตัวนี้เทียบ baseline",
     },
     {
       label: "เวลาเฉลี่ย (เฉพาะแก้/เลือก → ยืนยัน)",
-      value: stats.avgDurationSeconds
-        ? `${Math.round(stats.avgDurationSeconds / 60)} นาที`
+      value: m.avgDurationSeconds
+        ? `${Math.round(m.avgDurationSeconds / 60)} นาที`
         : "-",
       note: "ตัวเลขเดิม ไม่รวมเวลากรอกแบบประเมิน/เวลา AI ร่าง — เก็บไว้อ้างอิงย้อนหลัง",
     },
-    { label: "เป้าหมายที่ครูแก้", value: `${stats.goalEditRate}%` },
-    { label: "เหตุผลเบิกสื่อที่ครูแก้", value: `${stats.mediaEditRate}%` },
+    { label: "เป้าหมายที่ครูแก้", value: `${m.goalEditRate}%` },
+    { label: "เหตุผลเบิกสื่อที่ครูแก้", value: `${m.mediaEditRate}%` },
     {
       label: "ครูแก้ระดับที่ AI จัดให้",
-      value:
-        stats.abilityOverrideRate !== null
-          ? `${stats.abilityOverrideRate}%`
-          : "—",
+      value: m.abilityOverrideRate !== null ? `${m.abilityOverrideRate}%` : "—",
       note: "ยิ่งต่ำ = AI จัดระดับแม่น — นับเฉพาะ domain ที่ AI เสนอค่ามา",
     },
   ];
+}
 
+function MetricSection({
+  title,
+  description,
+  metrics,
+}: {
+  title: string;
+  description: string;
+  metrics: PlanUsageMetrics;
+}) {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <a href="/" className="text-sm text-slate-400 hover:text-slate-600">
-        ← กลับหน้าหลัก
-      </a>
-      <h1 className="mb-1 mt-4 text-2xl font-bold text-slate-900">
-        สถิติการใช้งาน
-      </h1>
-      <p className="mb-6 text-sm text-slate-500">
-        ตัวเลขเหล่านี้ใช้เป็นหลักฐานประกอบใบสมัคร — ระบบเก็บให้อัตโนมัติ
-      </p>
+    <section className="mb-10">
+      <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+      <p className="mb-4 text-sm text-slate-500">{description}</p>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {cards.map((c) => (
+        {buildCards(metrics).map((c) => (
           <div
             key={c.label}
             className="rounded-xl border border-slate-200 bg-white p-5"
@@ -79,13 +67,57 @@ export default function StatsPage() {
           </div>
         ))}
       </div>
-      <div className="mt-2 text-sm text-gray-500">
-        ไม่แก้เลย {stats.goalEditBreakdown.uneditedPct}% · แก้เล็กน้อย{" "}
-        {stats.goalEditBreakdown.minorEditPct}% · แก้เยอะ{" "}
-        {stats.goalEditBreakdown.majorEditPct}%
-      </div>
 
-      <p className="mt-6 text-xs text-slate-400">
+      <div className="mt-2 text-sm text-gray-500">
+        ไม่แก้เลย {metrics.goalEditBreakdown.uneditedPct}% · แก้เล็กน้อย{" "}
+        {metrics.goalEditBreakdown.minorEditPct}% · แก้เยอะ{" "}
+        {metrics.goalEditBreakdown.majorEditPct}%
+      </div>
+    </section>
+  );
+}
+
+export default function StatsPage() {
+  const [stats, setStats] = useState<UsageStats | null>(null);
+
+  useEffect(() => {
+    fetch("/api/stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
+  if (!stats) {
+    return (
+      <main className="mx-auto max-w-3xl p-8 text-slate-400">กำลังโหลด...</main>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-3xl px-4 py-8">
+      <a href="/" className="text-sm text-slate-400 hover:text-slate-600">
+        ← กลับหน้าหลัก
+      </a>
+      <h1 className="mb-1 mt-4 text-2xl font-bold text-slate-900">
+        สถิติการใช้งาน
+      </h1>
+      <p className="mb-8 text-sm text-slate-500">
+        ตัวเลขเหล่านี้ใช้เป็นหลักฐานประกอบใบสมัคร — ระบบเก็บให้อัตโนมัติ
+      </p>
+
+      <MetricSection
+        title="ของฉัน"
+        description="นับเฉพาะแผนและนักเรียนที่อยู่ในความดูแลของบัญชีนี้"
+        metrics={stats.mine}
+      />
+
+      <MetricSection
+        title="ทั้งระบบ"
+        description="ยอดรวมของครูทุกคนในระบบ — เป็นตัวเลขรวมเท่านั้น ไม่มีชื่อครูหรือข้อมูลนักเรียนรายคน"
+        metrics={stats.all}
+      />
+
+      <p className="mt-2 text-xs text-slate-400">
         💡 &ldquo;เป้าหมายที่ครูแก้ %&rdquo; ยิ่งต่ำ = AI ร่างได้ตรงใจครูมากขึ้น
         · ทุกจุดที่ครูแก้คือ insight ว่าระบบยังไม่ดีพอตรงไหน
       </p>
