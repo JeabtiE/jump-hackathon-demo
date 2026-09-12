@@ -5,10 +5,16 @@
  *   npm run test:classifier
  * (บังคับ USE_MOCK=true ด้านล่าง — เทสต์ต้องไม่ยิง LLM จริงและไม่เสียเงิน)
  *
- * เน้น 3 เรื่องที่พังแล้วเอกสาร/งบเบิกเสียหายจริง:
- * 1. ข้อความชัด → ได้ value ที่อยู่ในชุดตัวเลือกของ domain นั้นจริง
- * 2. ข้อความกำกวม/ว่าง → null + confidence "low" (ห้ามเดาแทนครู)
- * 3. ค่าที่ AI มั่วขึ้นมาเอง ต้องไม่มีทางหลุดออกไปเป็นข้อเสนอ (CLAUDE.md §4)
+ * เน้น 4 เรื่องที่พังแล้วเอกสาร/งบเบิกเสียหายจริง:
+ * 1. [กลุ่ม ข] ข้อความชัด → ได้ value ที่อยู่ในชุดตัวเลือกของ domain นั้นจริง + high
+ * 2. [กลุ่ม ก] ข้อความที่อยู่คนละมิติกับทุกตัวเลือก → null + "low" (ห้ามเลือกอันที่ใกล้ที่สุด)
+ * 3. ข้อความกำกวม/ว่าง → null + confidence "low" (ห้ามเดาแทนครู)
+ * 4. ค่าที่ AI มั่วขึ้นมาเอง ต้องไม่มีทางหลุดออกไปเป็นข้อเสนอ (CLAUDE.md §4)
+ *
+ * ⚠️ ต้องผ่าน "สองทิศทาง" เสมอ: รัด prompt จนตอบ null หมด = ครูต้องเลือกเองทุกช่อง
+ *    เท่ากับกลับไปเป็น dropdown เดิม ฟีเจอร์นี้ก็ไร้ความหมาย
+ *
+ * 💰 อยากวัด prompt กับโมเดลจริง (mock วัดได้แค่ชั้น validate): LIVE=true npm run test:classifier
  */
 
 import {
@@ -49,15 +55,34 @@ function ok(name, condition, detail = "") {
   }
 }
 
-console.log("\n── ข้อความชัดเจน → ได้ value ที่อยู่ในชุดตัวเลือกจริง ──");
-
-const clearCases = [
+/**
+ * กลุ่ม ข — เคสที่ต้อง "ยังกล้าเสนอ" (regression guard ของการรัด prompt)
+ *
+ * ถ้ารัด prompt จนโมเดลขี้กลัวแล้วตอบ null หมด ครูต้องเลือกเองทุกช่อง
+ * = เท่ากับกลับไปเป็น dropdown เดิม ฟีเจอร์นี้ก็ไร้ความหมาย
+ * ทุกเคสในกลุ่มนี้ต้องได้ค่าที่ถูกต้อง + confidence "high" เสมอ
+ */
+const mustSuggestCases = [
   {
     name: "ออทิสติก/การสื่อสาร: ไม่พูด ใช้ท่าทาง",
     disabilityType: "autism",
     domain: "communication",
     text: "นักเรียนยังไม่พูดเป็นคำ ใช้ท่าทางชี้บอกความต้องการ",
     expected: "no_speech_gesture_only",
+  },
+  {
+    name: "ออทิสติก/การสื่อสาร: ไม่พูดเลย ใช้ชี้เอา",
+    disabilityType: "autism",
+    domain: "communication",
+    text: "ไม่พูดเลย ใช้ชี้เอา",
+    expected: "no_speech_gesture_only",
+  },
+  {
+    name: "ออทิสติก/การสื่อสาร: พูดได้ทีละคำ",
+    disabilityType: "autism",
+    domain: "communication",
+    text: "พูดได้ทีละคำ ยังไม่ต่อประโยค",
+    expected: "single_word_only",
   },
   {
     name: "LD/การอ่าน: สะกดคำไม่ได้",
@@ -67,7 +92,21 @@ const clearCases = [
     expected: "cannot_spell_2syllable",
   },
   {
-    name: "บกพร่องทางการพูด/การสื่อสาร: ออกเสียงไม่ชัด",
+    name: "LD/การคำนวณ: ทดเลขไม่ได้",
+    disabilityType: "learning",
+    domain: "math",
+    text: "นักเรียนคำนวณการทดเลขไม่ได้ ต้องนับนิ้วช่วยทุกครั้ง",
+    expected: "cannot_calculate_carry",
+  },
+  {
+    name: "ออทิสติก/ช่วยเหลือตนเอง: ต้องเตือนทุกขั้นตอน",
+    disabilityType: "autism",
+    domain: "selfHelp",
+    text: "ต้องมีคนเตือนทุกขั้นตอนตอนแต่งตัวและเข้าห้องน้ำ",
+    expected: "needs_prompting",
+  },
+  {
+    name: "บกพร่องทางการพูด/การสื่อสาร: ออกเสียงไม่ชัด (มีตัวเลือกตรงจริง)",
     disabilityType: "speech",
     domain: "communication",
     text: "นักเรียนพูดได้แต่ออกเสียงไม่ชัด คนอื่นฟังแล้วไม่ค่อยเข้าใจ",
@@ -75,7 +114,40 @@ const clearCases = [
   },
 ];
 
-for (const c of clearCases) {
+/**
+ * กลุ่ม ก — ข้อความที่อยู่ "คนละมิติ" กับทุกตัวเลือกที่มี → ต้อง null + low
+ *
+ * เคสจริงที่เคยพัง: ครูพิมพ์ "ไม่สามารถออกเสียงได้ถูกต้อง" (= พูดได้ แต่ออกเสียงไม่ชัด)
+ * ในด้าน communication ของ autism ซึ่งมีแค่ "ไม่พูดเลย" กับ "พูดคำเดี่ยว"
+ * — ทั้งสองอยู่ในมิติ "ปริมาณคำพูด" ไม่ใช่ "ความชัดของการออกเสียง"
+ * AI เดิมตอบ no_speech_gesture_only แบบ high → retrieval เบิกสื่อผิด (ผิด CLAUDE.md §4)
+ */
+const mismatchCases = [
+  {
+    name: "ออกเสียงไม่ถูกต้อง (autism/communication)",
+    disabilityType: "autism",
+    domain: "communication",
+    text: "ไม่สามารถออกเสียงได้ถูกต้อง",
+  },
+  {
+    name: "พูดไม่ชัด (autism/communication)",
+    disabilityType: "autism",
+    domain: "communication",
+    text: "พูดไม่ชัด",
+  },
+  {
+    name: "ออกเสียง ร ล ไม่ได้ (autism/communication)",
+    disabilityType: "autism",
+    domain: "communication",
+    text: "ออกเสียง ร ล ไม่ได้",
+  },
+];
+
+console.log("\n── กลุ่ม ข: ข้อความชัดเจน → ต้องยังเสนอค่าได้ + high (กันขี้กลัวเกิน) ──");
+
+let mustSuggestHigh = 0;
+
+for (const c of mustSuggestCases) {
   const result = await classifyAbility(c.disabilityType, c.domain, c.text);
   const allowed = getDomainOptions(c.disabilityType, c.domain).map((o) => o.value);
 
@@ -83,6 +155,21 @@ for (const c of clearCases) {
   ok(`${c.name}: ค่าที่เสนออยู่ในชุดตัวเลือก`, allowed.includes(result.suggestedLevel));
   check(`${c.name}: confidence high`, result.confidence, "high");
   check(`${c.name}: domain ตรงกับที่ขอ`, result.domain, c.domain);
+
+  if (result.suggestedLevel === c.expected && result.confidence === "high") mustSuggestHigh++;
+}
+
+console.log("\n── กลุ่ม ก: ข้อความคนละมิติกับทุกตัวเลือก → ต้อง null + low ──");
+
+let mismatchNull = 0;
+
+for (const c of mismatchCases) {
+  const result = await classifyAbility(c.disabilityType, c.domain, c.text);
+  check(`${c.name} → null`, result.suggestedLevel, null);
+  check(`${c.name} → low`, result.confidence, "low");
+  ok(`${c.name}: มีเหตุผลให้ครูอ่าน`, result.rationale.length > 0);
+
+  if (result.suggestedLevel === null && result.confidence === "low") mismatchNull++;
 }
 
 console.log("\n── ข้อความกำกวม / ไม่มีข้อมูล → null + low (ครูตัดสินเอง) ──");
@@ -230,5 +317,52 @@ const dirtyRationale = parseClassification(
 );
 ok("ชื่อที่ AI คัดลอกมาใน rationale ถูก scrub", !dirtyRationale.rationale.includes("สมชาย"));
 
+
+/**
+ * โหมด LIVE — ยิง LLM จริง (ไม่รันโดยปริยาย เพราะช้าและเสียเงิน):
+ *   LIVE=true npm run test:classifier
+ *
+ * ทำไมต้องมี: mock จับคู่ด้วยคำที่อยู่ใน label เท่านั้น จึงพิสูจน์ได้แค่ "ชั้น validate"
+ * ไม่ได้พิสูจน์ว่า system prompt กันการเลือกข้ามมิติได้จริง (บั๊ก "ออกเสียงไม่ชัด" → no_speech)
+ * โหมดนี้ยิงกลุ่ม ก/ข ชุดเดียวกันเข้าโมเดลจริง เพื่อวัด prompt ตรง ๆ
+ */
+if (process.env.LIVE === "true") {
+  try {
+    process.loadEnvFile(".env"); // ไม่มีไฟล์ก็ไม่เป็นไร — อาจตั้ง key มาจาก shell แล้ว
+  } catch {}
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log("\n⏭️  LIVE=true แต่ไม่มี ANTHROPIC_API_KEY — ข้ามโหมด LIVE");
+  } else {
+    process.env.USE_MOCK = "false";
+    console.log("\n── LIVE: ยิง LLM จริง — กลุ่ม ก ต้อง null / กลุ่ม ข ต้อง high ──");
+
+    let liveMismatchNull = 0;
+    for (const c of mismatchCases) {
+      const r = await classifyAbility(c.disabilityType, c.domain, c.text);
+      check(`[LIVE] ${c.name} → null`, r.suggestedLevel, null);
+      check(`[LIVE] ${c.name} → low`, r.confidence, "low");
+      if (r.suggestedLevel === null && r.confidence === "low") liveMismatchNull++;
+    }
+
+    let liveMustSuggestHigh = 0;
+    for (const c of mustSuggestCases) {
+      const r = await classifyAbility(c.disabilityType, c.domain, c.text);
+      check(`[LIVE] ${c.name} → ${c.expected}`, r.suggestedLevel, c.expected);
+      check(`[LIVE] ${c.name}: confidence high`, r.confidence, "high");
+      if (r.suggestedLevel === c.expected && r.confidence === "high") liveMustSuggestHigh++;
+    }
+
+    console.log(
+      `\n  [LIVE] กลุ่ม ก ได้ null ${liveMismatchNull}/${mismatchCases.length} · ` +
+        `กลุ่ม ข ยัง high ${liveMustSuggestHigh}/${mustSuggestCases.length}`
+    );
+  }
+}
+
+console.log(
+  `\nสรุปสองทิศทาง (mock): กลุ่ม ก ได้ null ${mismatchNull}/${mismatchCases.length} · ` +
+    `กลุ่ม ข ยัง high ${mustSuggestHigh}/${mustSuggestCases.length}`
+);
 console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} · ไม่ผ่าน ${failed}\n`);
 process.exit(failed === 0 ? 0 : 1);

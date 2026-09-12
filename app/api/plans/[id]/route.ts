@@ -14,6 +14,7 @@ import { prisma } from "@/lib/db";
 import { isKnownIndicatorCode } from "@/lib/curriculum-retrieval";
 import { toPlanDTO } from "@/lib/serializers";
 import { fetchAnnualMediaContext } from "@/lib/plan-queries";
+import { requireUserId, unauthorizedResponse } from "@/lib/auth-guard";
 import type { UpdatePlanRequest } from "@/lib/types";
 
 const INCLUDE = {
@@ -52,8 +53,12 @@ function cleanIndicatorCodes(codes: string[]): string[] {
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
-    const plan = await prisma.plan.findUnique({
-      where: { id: params.id },
+    const userId = await requireUserId();
+
+    // 🔒 ไต่ผ่าน student ไปหา userId — Plan ไม่มี userId ของตัวเองโดยตั้งใจ
+    //    (source of truth ของเจ้าของอยู่ที่ Student ที่เดียว ดู prisma/schema.prisma)
+    const plan = await prisma.plan.findFirst({
+      where: { id: params.id, student: { userId } },
       include: INCLUDE,
     });
     if (!plan) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
@@ -66,6 +71,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
     return NextResponse.json(toPlanDTO(plan, annual));
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("GET /api/plans/[id] failed:", err);
     return NextResponse.json({ error: "ดึงข้อมูลแผนไม่สำเร็จ" }, { status: 500 });
   }
@@ -73,10 +81,47 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
+    const userId = await requireUserId();
+
     const body = (await request.json()) as UpdatePlanRequest;
 
-    const existing = await prisma.plan.findUnique({ where: { id: params.id } });
+    // ดึงแผนพร้อม id ลูกทั้งหมดมาในคิวรีเดียว — ใช้ทั้งยืนยันเจ้าของและสร้างชุด id ที่ถูกต้อง
+    const existing = await prisma.plan.findFirst({
+      where: { id: params.id, student: { userId } },
+      include: {
+        domainSections: { select: { id: true, goals: { select: { id: true } } } },
+        media: { select: { id: true } },
+      },
+    });
     if (!existing) return NextResponse.json({ error: "ไม่พบแผน" }, { status: 404 });
+
+    // ── 🔒 ตรวจว่า id ทุกตัวที่ client ส่งมาอยู่ในแผนฉบับนี้จริง ──
+    // ของเดิม update ด้วย id ที่ client ส่งมาตรงๆ โดยไม่ตรวจว่าอยู่ในแผนไหน
+    // → รู้ goal id ของครูคนอื่นแค่ตัวเดียว ก็เขียนทับเป้าหมายในแผนของเขาได้
+    //   ผ่านแผนของตัวเอง (เจ้าของแผนถูกต้อง แต่ลูกเป็นของคนอื่น)
+    const sectionIds = new Set(existing.domainSections.map((s) => s.id));
+    const goalIds = new Set(existing.domainSections.flatMap((s) => s.goals.map((g) => g.id)));
+    const mediaIds = new Set(existing.media.map((m) => m.id));
+
+    const invalidIds: string[] = [
+      ...(body.domainSections ?? []).filter((s) => !sectionIds.has(s.id)).map((s) => s.id),
+      ...(body.goals ?? []).filter((g) => !goalIds.has(g.id)).map((g) => g.id),
+      ...(body.media ?? []).filter((m) => !mediaIds.has(m.id)).map((m) => m.id),
+    ];
+
+    // ⚠️ เจอ id นอกแผนแม้ตัวเดียว = ปฏิเสธทั้ง request ห้าม update บางส่วนแล้วข้ามที่เหลือ
+    //    ไม่งั้นครูจะเห็นว่า "บันทึกสำเร็จ" ทั้งที่บางช่องไม่ได้ถูกบันทึกจริง
+    if (invalidIds.length > 0) {
+      // log แค่ id ห้าม log เนื้อหาแผนหรือข้อมูลนักเรียน
+      console.warn("PATCH /api/plans/[id] ปฏิเสธ id ที่ไม่อยู่ในแผน:", {
+        planId: params.id,
+        invalidIds,
+      });
+      return NextResponse.json(
+        { error: "ข้อมูลที่ส่งมาไม่ตรงกับแผนฉบับนี้ กรุณารีเฟรชหน้าแล้วลองใหม่" },
+        { status: 400 }
+      );
+    }
 
     await prisma.$transaction(async (tx) => {
       // ── ✏️ ใหม่: อัปเดตระดับ domain section — แก้เฉพาะ finalXxx ไม่แตะ aiXxx ──
@@ -168,6 +213,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     return NextResponse.json(toPlanDTO(updated!, annual));
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("PATCH /api/plans/[id] failed:", err);
     return NextResponse.json({ error: "บันทึกการแก้ไขไม่สำเร็จ" }, { status: 500 });
   }

@@ -292,8 +292,11 @@ export interface UpdatePlanRequest {
 // API: สถิติสำหรับเก็บหลักฐาน (ใช้ตอนทำใบสมัคร)
 // ═════════════════════════════════════════════
 
-/** GET /api/stats */
-export interface UsageStats {
+/**
+ * ตัวเลขหนึ่งชุด — ใช้ทั้งกับ "ของฉัน" และ "ทั้งระบบ" โครงเดียวกันเป๊ะ
+ * เพื่อให้ UI render ด้วย component เดียวได้ ไม่ต้องมีสองแบบ
+ */
+export interface PlanUsageMetrics {
   totalPlans: number;
   finalizedPlans: number;
   /** เวลาเฉลี่ย "ครูแก้/เลือก → ยืนยัน" เท่านั้น — ของเดิม ไม่รวมเวลากรอกแบบประเมิน/AI ร่าง */
@@ -315,6 +318,21 @@ export interface UsageStats {
    * ยิ่งต่ำ = AI จัดระดับแม่น · null = ยังไม่มีข้อมูลพอ (ยังไม่มี domain ที่ AI เสนอ)
    */
   abilityOverrideRate: number | null;
+}
+
+/**
+ * GET /api/stats
+ *
+ * ✏️ เดิมเป็น metric ชุดเดียวแบน ตอนนี้แยกเป็น mine / all
+ *    ⚠️ breaking change — ที่ไหนเคยเขียน stats.totalPlans ต้องเป็น stats.mine.totalPlans
+ *
+ * 🔒 all เป็นตัวเลขล้วน ห้ามมี PII หรืออะไรที่ไล่ย้อนไปหาครูคนใดคนหนึ่งได้
+ */
+export interface UsageStats {
+  /** ของครูที่ล็อกอินอยู่เท่านั้น */
+  mine: PlanUsageMetrics;
+  /** ยอดรวมทั้งระบบทุกคนรวมกัน — ใช้เป็นหลักฐานประกอบใบสมัครของโครงการ */
+  all: PlanUsageMetrics;
 }
 
 // ═════════════════════════════════════════════

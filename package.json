@@ -20,9 +20,11 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.11.3",
     "@prisma/client": "^5.18.0",
     "docx": "^8.5.0",
     "next": "14.2.5",
+    "next-auth": "^5.0.0-beta.32",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -20,7 +20,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   // runtime: ผ่าน transaction pooler (6543) — เหมาะกับ serverless ของ Vercel
   url       = env("DATABASE_URL")
   // migrate/db push: ต้องต่อตรง (session pooler 5432) เพราะ PgBouncer
@@ -32,34 +32,38 @@ datasource db {
 model Student {
   id   String @id @default(cuid())
   /// รหัสอ้างอิงที่ครูตั้งเอง เช่น "A-01" — ใช้แสดงผลในระบบและส่งไป LLM ได้
-  code String @unique
+  ///
+  /// ⚠️ ไม่ unique ทั้งระบบแล้ว — unique แค่ภายในครูคนเดียวกัน (@@unique([userId, code]) ท้าย model)
+  /// ครูคนละคนตั้ง "A-01" ซ้ำกันเป็นเรื่องปกติ ไม่ควรเป็นความผิดของใคร
+  /// → ห้ามใช้ findUnique({ where: { code } }) อีก ต้องเป็น findFirst({ where: { userId, code } })
+  code String
 
   // ══════════════ 🔒 PII ZONE — ห้ามส่งไป LLM API ══════════════
   // ใช้เฉพาะตอน export เอกสาร .docx เท่านั้น
   // ทุก field ในบล็อกนี้ต้องอยู่ใน PII_FIELDS ของ lib/pii-guard.ts
   /// ชื่อ-นามสกุลจริง เช่น "เด็กชายสมชาย ใจดี"
-  fullName        String?
+  fullName         String?
   /// เลขประจำตัวประชาชน 13 หลัก
-  nationalId      String?
+  nationalId       String?
   /// เลขทะเบียนคนพิการ (ถ้ามี)
   disabilityCardNo String?
   /// วันเดือนปีเกิด เก็บเป็น string ตามที่กรอกในฟอร์ม เช่น "5 ต.ค. 2561"
-  birthDate       String?
-  religion        String?
+  birthDate        String?
+  religion         String?
   /// ลักษณะความพิการแบบละเอียด (ข้อความอิสระจากครู)
   disabilityDetail String?
-  fatherName      String?
-  motherName      String?
-  guardianName    String?
+  fatherName       String?
+  motherName       String?
+  guardianName     String?
   /// ความเกี่ยวข้องของผู้ปกครอง เช่น "มารดา"
   guardianRelation String?
-  address         String?
-  phone           String?
-  schoolName      String?
+  address          String?
+  phone            String?
+  schoolName       String?
   /// สังกัด เช่น "สพป.ชร.เขต1"
-  affiliation     String?
+  affiliation      String?
   /// ข้อมูลทางการแพทย์ (โรคประจำตัว แพ้ยา ผลตรวจ ฯลฯ)
-  medicalNote     String?
+  medicalNote      String?
   /// ประวัติการศึกษาที่ผ่านมา
   educationHistory String?
   // ══════════════ จบ PII ZONE ══════════════
@@ -71,24 +75,49 @@ model Student {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // ══════════════ OWNERSHIP (Phase 2) ══════════════
+  // 🔑 Student คือจุดเดียวในระบบที่บอกว่า "ข้อมูลนี้เป็นของครูคนไหน"
+  //    Assessment / Plan / PlanDomainSection / PlanGoal / PlanMedia ตั้งใจไม่มี userId
+  //    ทุกอันไต่ผ่าน Student เอา (plan.student.userId) — ถ้าใส่ซ้ำหลายที่ วันหนึ่งมันจะ
+  //    ไม่ตรงกันแล้วไม่มีใครรู้ว่าอันไหนถูก
+  //
+  // ✅ required แล้ว — นักเรียนทุกแถวต้องมีเจ้าของเสมอ ไม่มีข้อยกเว้น
+  //    (ผ่าน scripts/backfill-owner.ts มาแล้ว ดู MIGRATION-NOTES.md)
+  //    ⚠️ ห้ามเปลี่ยนกลับเป็น String? — แถวที่ userId เป็น null จะไม่ตรงกับ
+  //    where ของใครเลย กลายเป็นข้อมูลที่ไม่มีใครเข้าถึงได้ แต่ยังนั่งอยู่ใน DB
+  //
+  // 🔒 ไม่ใช่ PII (เป็น FK ภายในระบบ ไม่ได้ระบุตัวตนนักเรียน) → ไม่ต้องแตะ PII_FIELDS
+  //    ใน lib/pii-guard.ts และ buildLLMSafePayload เป็น whitelist อยู่แล้ว จึงไม่รั่วไป LLM
+  //
+  // ⚠️ onDelete: Restrict โดยตั้งใจ — ลบบัญชีครูต้องไม่ลากข้อมูลนักเรียนหายตามไปด้วย
+  //    ต้องย้ายเจ้าของก่อนถึงจะลบ User ได้
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  // ══════════════ จบ OWNERSHIP ══════════════
+
   assessments Assessment[]
   plans       Plan[]
 
   @@index([disabilityType])
+  @@index([userId])
+  /// รหัสนักเรียนซ้ำข้ามครูได้ แต่ห้ามซ้ำภายในครูคนเดียวกัน
+  /// ⚠️ ใช้ได้เพราะ userId เป็น required แล้วเท่านั้น — ถ้า userId ยัง nullable
+  ///    Postgres ถือว่า NULL ไม่เท่ากับ NULL แถวที่ไม่มีเจ้าของจะซ้ำได้ไม่จำกัด
+  @@unique([userId, code])
 }
 
 // ── การประเมินความสามารถ (แยกจาก Plan เพื่อเก็บพัฒนาการข้ามปี) ──
 model Assessment {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   studentId String
-  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   /// { "reading": "cannot_spell_2syllable", "communication": "no_speech_gesture_only" }
   /// ⚠️ ค่าที่ครูยืนยันแล้ว — เป็นค่าเดียวที่ retrieval ใช้ (ห้ามใช้ค่าที่ AI เสนอแทน)
-  abilityLevels Json
+  abilityLevels            Json
   /// ข้อความอิสระที่ครูพิมพ์ต่อ domain { "reading": "อ่านคำ 2 พยางค์ไม่ได้..." }
   /// ⚠️ ไม่ใช่ PII ZONE — ไหลเข้า LLM ได้ (generation + audit) แต่ต้องผ่าน scrubFreeText() ก่อน
-  abilityFreeText Json?
+  abilityFreeText          Json?
   /// ค่า enum ที่ AI เสนอจาก abilityFreeText ก่อนครูแก้ — audit แบบเดียวกับ aiOriginal
   /// ห้ามเขียนทับหลังบันทึกครั้งแรก และห้ามใช้แทน abilityLevels
   abilityLevelsAiSuggested Json?
@@ -96,7 +125,7 @@ model Assessment {
   /// แล้ว จุดเด่น/จุดที่ควรพัฒนาแบบละเอียดต่อ domain ย้ายไปอยู่ที่นั่นแทน
   /// ฟิลด์นี้ยังคงไว้เพื่อ backward-compat กับแผนเก่า และเป็น fallback
   /// ตอนส่ง prompt ถ้ายังไม่มีข้อมูลต่อ domain
-  strengths     String?
+  strengths                String?
 
   assessedAt DateTime @default(now())
 
@@ -246,4 +275,88 @@ model PlanMedia {
   isApproved Boolean @default(true)
 
   @@index([planId])
+}
+
+// ═════════════════════════════════════════════════════════════
+// PHASE 2 — AUTH ZONE (Auth.js v5 / @auth/prisma-adapter)
+//
+// 🔑 4 model ล่างนี้เป็น "สเปคของ adapter" ไม่ใช่ของเรา — ชื่อ field ต้องตรงเป๊ะ
+//    (รวมทั้งชื่อ snake_case ใน Account ที่ดูขัดกับที่อื่นในไฟล์นี้) ห้ามเปลี่ยนชื่อ
+//    ให้เข้ากับ convention ของโปรเจกต์ ไม่งั้น adapter หาไม่เจอตอน runtime
+//    อ้างอิง: https://authjs.dev/getting-started/adapters/prisma
+//
+// 🔒 ไม่มี field ไหนในโซนนี้เป็น PII ของ "นักเรียน" (เป็นข้อมูลบัญชีของ "ครู")
+//    → ไม่ต้องเพิ่มใน PII_FIELDS ของ lib/pii-guard.ts
+//    PII ZONE ของนักเรียนยังอยู่ที่ model Student ที่เดียวเหมือนเดิม
+//
+// 💡 ไม่ได้ใส่ model Authenticator (WebAuthn/passkey) — เพิ่มทีหลังได้ถ้าจะใช้
+// ═════════════════════════════════════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  /// required + unique — เป็นกุญแจที่ใช้จับคู่กับ AllowedEmail
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+  /// นักเรียนที่ครูคนนี้เป็นเจ้าของข้อมูล
+  students Student[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  /// ไม่มี @id — adapter ใช้ sessionToken เป็น unique criteria (ตามสเปค v5)
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ── รายชื่ออีเมลที่อนุญาตให้เข้าระบบ (allowlist) ─────────────────
+// ไม่ใช่ของ adapter — เป็นของเราเอง ใช้ใน callback signIn ตอน Phase 2:
+// อีเมลที่ไม่อยู่ในตารางนี้ = login ไม่ผ่าน (ระบบมี PII ของเด็ก เปิดให้ใครก็สมัครไม่ได้)
+model AllowedEmail {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  /// บันทึกช่วยจำว่าใคร/ทำไมถึงอนุญาต เช่น "ครูพี่เลี้ยง ร.ร.บ้านสันโค้ง"
+  note      String?
+  createdAt DateTime @default(now())
 }

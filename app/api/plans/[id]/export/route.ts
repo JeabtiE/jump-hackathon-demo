@@ -40,6 +40,7 @@ import { prisma } from "@/lib/db";
 import { lookupIndicators } from "@/lib/curriculum-retrieval";
 import { personalizeForExport } from "@/lib/pii-guard";
 import { getDomainLabel } from "@/lib/ability-options";
+import { requireUserId, unauthorizedResponse } from "@/lib/auth-guard";
 
 const DISABILITY_LABEL: Record<string, string> = {
   visual: "บกพร่องทางการเห็น",
@@ -215,8 +216,12 @@ function domainSummaryCell(
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
-    const plan = await prisma.plan.findUnique({
-      where: { id: params.id },
+    const userId = await requireUserId();
+
+    // 🔒 จุดที่อันตรายที่สุดในระบบ — ไฟล์ที่คืนไปมี PII ครบชุด (ชื่อจริง เลขบัตรประชาชน
+    //    ที่อยู่ เบอร์โทร ชื่อผู้ปกครอง ข้อมูลการแพทย์) หลุดที่นี่คือหลุดทั้งแฟ้ม
+    const plan = await prisma.plan.findFirst({
+      where: { id: params.id, student: { userId } },
       include: {
         student: true,
         assessment: true,
@@ -480,6 +485,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       },
     });
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("GET /api/plans/[id]/export failed:", err);
     return NextResponse.json({ error: "สร้างไฟล์เอกสารไม่สำเร็จ" }, { status: 500 });
   }

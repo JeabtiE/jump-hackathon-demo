@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { classifyAbility } from "@/lib/ability-classifier";
+import { requireUserId, unauthorizedResponse } from "@/lib/auth-guard";
 
 interface ClassifyRequest {
   disabilityType?: string;
@@ -25,6 +26,11 @@ interface ClassifyRequest {
 
 export async function POST(request: Request) {
   try {
+    // 🔒 route นี้ไม่แตะ DB จึงไม่มีอะไรให้ scope ตามเจ้าของ — บังคับได้แค่ว่าต้องล็อกอิน
+    //    แต่จำเป็น: ถ้าเปิดโล่ง คนนอกยิง LLM ผ่านระบบเราได้ฟรีไม่จำกัด (เราจ่ายค่า token)
+    //    ⚠️ ยังไม่มี quota ต่อคน — ครูที่ล็อกอินแล้วยังยิงได้ไม่จำกัด (งานต่อไป)
+    await requireUserId();
+
     const body = (await request.json()) as ClassifyRequest;
 
     const disabilityType = body.disabilityType?.trim();
@@ -39,6 +45,9 @@ export async function POST(request: Request) {
     const result = await classifyAbility(disabilityType, domain, body.text ?? "");
     return NextResponse.json(result);
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     const msg = (err as Error).message ?? "";
     if (msg.startsWith("[PII GUARD]")) {
       console.error("POST /api/assess/classify PII guard tripped:", err);

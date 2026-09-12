@@ -27,6 +27,7 @@ import {
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/prompts";
 import { buildLLMSafePayload, assertNoPII } from "@/lib/pii-guard";
 import { buildAnnualContextsByPlan, toPlanDTO } from "@/lib/serializers";
+import { requireUserId, unauthorizedResponse } from "@/lib/auth-guard";
 import { fetchAnnualMediaContext } from "@/lib/plan-queries";
 import type { CreatePlanRequest, IndicatorEntry, LLMOutput, MediaEntry } from "@/lib/types";
 
@@ -211,13 +212,21 @@ async function callLLM(params: {
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireUserId();
+
     const body = (await request.json()) as CreatePlanRequest;
 
     if (!body.studentId) {
       return NextResponse.json({ error: "กรุณาระบุนักเรียน" }, { status: 400 });
     }
 
-    const student = await prisma.student.findUnique({ where: { id: body.studentId } });
+    // 🔒 ยืนยันเจ้าของ "ก่อน" ทุกอย่าง — ก่อนสร้าง Assessment ก่อน retrieval
+    //    และที่สำคัญที่สุดคือก่อนยิง LLM ซึ่งเป็นขั้นที่เสียเงินจริง
+    //    ถ้าเช็คทีหลัง คนนอกที่เดา studentId ถูกจะใช้ระบบเราเป็น proxy LLM ฟรีได้
+    //    ไม่ใช่ของเรา = "ไม่เจอ" ตอบ 404 ไม่ใช่ 403
+    const student = await prisma.student.findFirst({
+      where: { id: body.studentId, userId },
+    });
     if (!student) {
       return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 404 });
     }
@@ -354,6 +363,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(toPlanDTO(plan, annual), { status: 201 });
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("POST /api/plans failed:", err);
     return NextResponse.json({ error: "สร้างแผนไม่สำเร็จ" }, { status: 500 });
   }
@@ -362,11 +374,20 @@ export async function POST(request: Request) {
 /** GET /api/plans?studentId=xxx — ดึงรายการแผนของนักเรียน */
 export async function GET(request: Request) {
   try {
+    const userId = await requireUserId();
+
     const { searchParams } = new URL(request.url);
     const studentId = searchParams.get("studentId");
 
+    // 🔒 student: { userId } ติดไปเสมอ ไม่ว่าจะส่ง ?studentId มาหรือไม่
+    //    ⚠️ ห้ามเขียนเป็น `where: studentId ? {...} : undefined` แบบเดิมเด็ดขาด —
+    //    ไม่ส่ง studentId มาแล้ว where เป็น undefined = คืนแผนทั้ง DB
+    //    ถ้ามี studentId ก็แค่ AND เพิ่มเข้าไป ไม่ได้มาแทนที่เงื่อนไขเจ้าของ
     const plans = await prisma.plan.findMany({
-      where: studentId ? { studentId } : undefined,
+      where: {
+        student: { userId },
+        ...(studentId ? { studentId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: INCLUDE,
     });
@@ -378,6 +399,9 @@ export async function GET(request: Request) {
       plans.map((p) => toPlanDTO(p, annualByPlan.get(p.id)))
     );
   } catch (err) {
+    const unauthorized = unauthorizedResponse(err);
+    if (unauthorized) return unauthorized;
+
     console.error("GET /api/plans failed:", err);
     return NextResponse.json({ error: "ดึงข้อมูลแผนไม่สำเร็จ" }, { status: 500 });
   }
