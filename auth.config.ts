@@ -56,19 +56,44 @@ export const authConfig = {
      * ยัด user.id ลง token ตอนล็อกอินครั้งแรก
      * (รอบถัดๆ ไป user เป็น undefined — token ที่มีอยู่แล้วถูกส่งผ่านมาเฉยๆ)
      */
-    async jwt({ token, user }) {
+    async jwt({ token, user, profile }) {
       if (user?.id) token.id = user.id;
+
+      /**
+       * เอารูปโปรไฟล์กับชื่อจาก Google มาใส่ token ตรงๆ
+       *
+       * ⚠️ ทำไมต้องอ่านจาก profile ไม่รอค่าจาก DB:
+       *    บัญชีที่ถูกสร้างโดย scripts/backfill-owner.ts มีแค่ email ในตาราง User
+       *    (name/image เป็น NULL) พอล็อกอินด้วย Google ตัว adapter จะ "ผูก" บัญชี
+       *    Google เข้ากับแถวเดิม แต่ไม่ไปเขียนทับ name/image ให้ → token ได้ค่า null
+       *    แล้ว avatar เลยขึ้นเป็นตัวอักษรแรกตลอด
+       *    อ่านจาก profile จึงได้รูปเสมอ ไม่ว่าแถวใน DB จะมีหรือไม่มี
+       *
+       * profile มีค่าเฉพาะตอนล็อกอินใหม่ — รอบถัดไปเป็น undefined
+       * ค่าที่เคยใส่ไว้ยังอยู่ใน token เดิมจึงไม่หาย
+       */
+      if (profile) {
+        if (typeof profile.picture === "string") token.picture = profile.picture;
+        if (typeof profile.name === "string") token.name = profile.name;
+      }
+
       return token;
     },
 
     /**
-     * ย้าย id จาก token ออกมาที่ session.user.id
-     * 🔑 Phase 3 ทุก route จะพึ่งค่านี้เป็นตัวกรองข้อมูลตามเจ้าของ
+     * ย้ายค่าจาก token ออกมาที่ session.user
+     * 🔑 Phase 3 ทุก route จะพึ่ง session.user.id เป็นตัวกรองข้อมูลตามเจ้าของ
      */
     async session({ session, token }) {
       if (session.user && typeof token.id === "string") {
         session.user.id = token.id;
       }
+
+      // เขียนชัดๆ ไม่พึ่งพฤติกรรมเริ่มต้นของ Auth.js ที่ map picture → image ให้เอง
+      if (session.user && typeof token.picture === "string") {
+        session.user.image = token.picture;
+      }
+
       return session;
     },
   },
