@@ -2,6 +2,8 @@
  * scripts/test-api.mjs — ทดสอบ pipeline ทั้งเส้นผ่าน HTTP (mock mode)
  *
  * ต้องเปิด `npm run dev` ค้างไว้ก่อนรัน: npm run test:api
+ * และต้องตั้ง TEST_SESSION_TOKEN = ค่าคุกกี้ authjs.session-token จากเบราว์เซอร์ที่ล็อกอินแล้ว
+ * (ไม่ตั้ง → script หยุดพร้อมพิมพ์วิธีเอาค่ามา)
  * ขั้นไหน fail จะหยุดทันทีพร้อมรายละเอียด response
  *
  * ⚠️ ข้อมูลนักเรียนที่สร้างเป็นข้อมูลปลอมทั้งหมด (code TEST-01)
@@ -31,6 +33,35 @@ function fail(msg, detail) {
   process.exit(1);
 }
 
+// ── session ของครูทดสอบ ──────────────────────────────────────
+// ทุก route ใน app/api/** เรียก requireUserId() (lib/auth-guard.ts) → ไม่มี session = 401 ทุกขั้น
+// ⚠️ ห้ามแก้ด้วยการปิด auth check — ส่งคุกกี้ session จริงจากเบราว์เซอร์มาแทน
+//
+// ชื่อคุกกี้ = ค่า default ของ Auth.js v5 (auth.config.ts ไม่ได้ override cookies)
+//   http  → authjs.session-token
+//   https → __Secure-authjs.session-token  (Auth.js เติม prefix เองเมื่อ protocol เป็น https)
+const SESSION_TOKEN = process.env.TEST_SESSION_TOKEN?.trim();
+const SESSION_COOKIE_NAME = `${BASE.startsWith("https:") ? "__Secure-" : ""}authjs.session-token`;
+
+if (!SESSION_TOKEN) {
+  console.error(`❌ ไม่มี TEST_SESSION_TOKEN — API ต้องมี session ของครูที่ล็อกอินแล้ว (ไม่งั้นได้ 401 ทุกขั้น)
+
+วิธีเอาค่ามาจากเบราว์เซอร์:
+  1. npm run dev แล้วเปิด ${BASE} → ล็อกอินด้วยบัญชี Google ที่อยู่ในตาราง AllowedEmail
+  2. กด F12 เปิด DevTools → แท็บ Application (Chrome/Edge) หรือ Storage (Firefox)
+  3. Cookies → ${BASE} → หาแถวชื่อ ${SESSION_COOKIE_NAME}
+  4. ดับเบิลคลิกช่อง Value แล้วคัดลอกทั้งหมด (ยาวหลายร้อยตัวอักษร ขึ้นต้นด้วย eyJ)
+  5. รันใหม่พร้อมตั้งค่า:
+       Git Bash / macOS / Linux:  TEST_SESSION_TOKEN='<ค่า>' npm run test:api
+       PowerShell:                $env:TEST_SESSION_TOKEN='<ค่า>'; npm run test:api
+
+⚠️ ค่านี้คือกุญแจเข้าบัญชีครูเต็มสิทธิ์ (อ่าน PII นักเรียนได้)
+   ห้าม commit ห้ามใส่ไฟล์ที่แชร์ ห้ามวางในแชทหรือ issue
+   ข้อมูลทดสอบ (TEST-01) จะถูกสร้างเป็นของบัญชีนั้น
+   ถ้าเห็นคุกกี้แตกเป็น ${SESSION_COOKIE_NAME}.0 / .1 แปลว่า token เกิน 4KB — script นี้ยังไม่รองรับ`);
+  process.exit(1);
+}
+
 /** fetch + ตรวจ status ถ้าไม่ตรงที่คาดให้หยุดพร้อม body */
 async function call(method, urlPath, { body, expect = 200 } = {}) {
   const url = `${BASE}${urlPath}`;
@@ -38,11 +69,19 @@ async function call(method, urlPath, { body, expect = 200 } = {}) {
   try {
     res = await fetch(url, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        Cookie: `${SESSION_COOKIE_NAME}=${SESSION_TOKEN}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (e) {
     fail(`ต่อ ${url} ไม่ได้ — npm run dev เปิดอยู่หรือเปล่า?`, e.message);
+  }
+  if (res.status === 401) {
+    fail(
+      `${method} ${urlPath} ตอบ 401 — TEST_SESSION_TOKEN ใช้ไม่ได้ (หมดอายุ / คัดลอกไม่ครบ / คนละ AUTH_SECRET กับ server) ล็อกอินใหม่แล้วคัดลอกค่า ${SESSION_COOKIE_NAME} อีกครั้ง`
+    );
   }
   const expected = Array.isArray(expect) ? expect : [expect];
   if (!expected.includes(res.status)) {
@@ -324,5 +363,8 @@ console.log(`\n${"═".repeat(60)}`);
 console.log("🎉 ผ่านครบทั้ง 7 ขั้น — pipeline ทำงานได้ทั้งเส้นใน mock mode");
 console.log("═".repeat(60));
 console.log(`\n📌 studentId สำหรับลบข้อมูลทดสอบทีหลัง: ${student.id}`);
-console.log(`   ลบด้วย: curl -X DELETE ${BASE}/api/students/${student.id}`);
+// พิมพ์ชื่อตัวแปร ไม่พิมพ์ค่า token จริงลงจอ/log
+console.log(
+  `   ลบด้วย: curl -X DELETE -H "Cookie: ${SESSION_COOKIE_NAME}=$TEST_SESSION_TOKEN" ${BASE}/api/students/${student.id}`
+);
 console.log(`   (หรือรัน script นี้ซ้ำ — จะลบ TEST-01 เดิมให้เองก่อนสร้างใหม่)`);
