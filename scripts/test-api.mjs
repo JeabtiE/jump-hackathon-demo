@@ -111,11 +111,18 @@ const planReq = {
     behavior: "frequent_off_task",
     selfHelp: "needs_prompting",
   },
-  // audit ของ classifier — communication ครูยืนยันตรงกับที่ AI เสนอ,
-  // behavior ครูแก้เป็นค่าอื่น → abilityOverrideRate ต้องอยู่ระหว่าง 1-99%
+  // audit ของ classifier — communication ครูแตะเลือกเองและตรงกับที่ AI เสนอ,
+  // behavior ครูแตะแก้เป็นค่าอื่น → abilityOverrideRate ต้องอยู่ระหว่าง 1-99%
+  // selfHelp AI เสนอแล้วครูไม่ได้แตะ (ค่าตรงกัน) → ต้องนับเป็น notConfirmedByTeacher ไม่ใช่ "เห็นด้วย"
   abilityLevelsAiSuggested: {
     communication: "no_speech_gesture_only",
     behavior: "difficulty_transition",
+    selfHelp: "needs_prompting",
+  },
+  abilityLevelsConfirmedByTeacher: {
+    communication: true,
+    behavior: true,
+    selfHelp: false,
   },
   // จงใจใส่ชื่อเด็ก (คำนำหน้า "เด็กชาย") + เบอร์โทร เพื่อดูว่า scrubFreeText กรองออก
   strengths:
@@ -206,23 +213,37 @@ const statsRes = await call("GET", "/api/stats");
 const stats = await statsRes.json();
 console.log(JSON.stringify(stats, null, 2));
 
-if (stats.totalPlans < 1) fail("totalPlans ควร ≥ 1", stats);
-if (stats.finalizedPlans < 1) fail("finalizedPlans ควร ≥ 1 หลัง finalize", stats);
-if (stats.goalEditRate <= 0)
-  fail("goalEditRate ยังเป็น 0 ทั้งที่เพิ่งแก้ goal ไป — การนับ isEdited อาจพัง", stats);
-if (stats.avgDurationSeconds === null)
-  fail("avgDurationSeconds เป็น null ทั้งที่มีแผน finalized แล้ว", stats);
-if (typeof stats.abilityOverrideRate !== "number")
+// /api/stats คืน { mine, all } — แผนที่เพิ่งสร้างเป็นของบัญชีที่ล็อกอิน จึงเช็คที่ mine
+const mine = stats.mine;
+if (!mine) fail("response ไม่มี stats.mine — contract ของ UsageStats อาจเปลี่ยน", stats);
+
+if (mine.totalPlans < 1) fail("totalPlans ควร ≥ 1", mine);
+if (mine.finalizedPlans < 1) fail("finalizedPlans ควร ≥ 1 หลัง finalize", mine);
+if (mine.goalEditRate <= 0)
+  fail("goalEditRate ยังเป็น 0 ทั้งที่เพิ่งแก้ goal ไป — การนับ isEdited อาจพัง", mine);
+if (mine.avgDurationSeconds === null)
+  fail("avgDurationSeconds เป็น null ทั้งที่มีแผน finalized แล้ว", mine);
+if (typeof mine.abilityOverrideRate !== "number")
   fail(
-    "abilityOverrideRate ควรเป็นตัวเลข หลังส่ง abilityLevelsAiSuggested ไปแล้ว (null = ไม่เจอ domain ที่ AI เสนอ)",
-    stats
+    "abilityOverrideRate ควรเป็นตัวเลข หลังส่ง domain ที่ครูแตะเองไปแล้ว (null = ไม่เจอ domain ที่ครูแตะเอง)",
+    mine
   );
-if (stats.abilityOverrideRate < 1 || stats.abilityOverrideRate > 99)
+if (mine.abilityOverrideRate < 1 || mine.abilityOverrideRate > 99)
   fail(
     "abilityOverrideRate ควรอยู่ระหว่าง 1-99% (มีทั้ง domain ที่ตรงและที่ครูแก้) — การเทียบ suggested vs confirmed อาจพัง",
-    stats
+    mine
   );
-console.log(`✅ สถิติขยับถูกต้อง: goalEditRate=${stats.goalEditRate}% avgDurationSeconds=${stats.avgDurationSeconds} abilityOverrideRate=${stats.abilityOverrideRate}%`);
+
+// domain ที่ AI กรอกให้แล้วครูไม่ได้แตะ ต้องแยกกองของตัวเอง ห้ามไหลไปรวมกับ "เห็นด้วย"
+const breakdown = mine.abilityConfirmationBreakdown;
+if (!breakdown) fail("ไม่มี abilityConfirmationBreakdown ใน stats.mine", mine);
+if (breakdown.teacherAgreed < 1) fail("teacherAgreed ควร ≥ 1 (communication)", breakdown);
+if (breakdown.teacherOverrode < 1) fail("teacherOverrode ควร ≥ 1 (behavior)", breakdown);
+if (breakdown.notConfirmedByTeacher < 1)
+  fail("notConfirmedByTeacher ควร ≥ 1 (selfHelp ครูไม่ได้แตะ) — อาจถูกนับรวมเป็นเห็นด้วย", breakdown);
+console.log(
+  `✅ สถิติขยับถูกต้อง: goalEditRate=${mine.goalEditRate}% avgDurationSeconds=${mine.avgDurationSeconds} abilityOverrideRate=${mine.abilityOverrideRate}% breakdown=${JSON.stringify(breakdown)}`
+);
 
 // ═════════════ ขั้นที่ 6: export .docx ═════════════
 
