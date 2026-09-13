@@ -34,7 +34,14 @@ function buildCards(m: PlanUsageMetrics) {
     {
       label: "ครูแก้ระดับที่ AI จัดให้",
       value: m.abilityOverrideRate !== null ? `${m.abilityOverrideRate}%` : "—",
-      note: "ยิ่งต่ำ = AI จัดระดับแม่น — นับเฉพาะ domain ที่ AI เสนอค่ามา",
+      note: `นับเฉพาะด้านที่ครูแตะเลือกเอง ${
+        m.abilityConfirmationBreakdown.teacherAgreed +
+        m.abilityConfirmationBreakdown.teacherOverrode
+      } ด้าน · AI กรอกให้ครูไม่ได้แตะ ${
+        m.abilityConfirmationBreakdown.notConfirmedByTeacher
+      } ด้าน · ข้อมูลก่อนเริ่มเก็บสถานะนี้ (ไม่ทราบ) ${
+        m.abilityConfirmationBreakdown.unknown
+      } ด้าน`,
     },
   ];
 }

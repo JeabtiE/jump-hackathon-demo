@@ -157,6 +157,15 @@ export interface CreatePlanRequest {
    * ⚠️ ห้ามใช้แทน abilityLevels: retrieval และ generation ใช้ค่าที่ครูยืนยันเท่านั้น
    */
   abilityLevelsAiSuggested?: Record<string, string>;
+  /**
+   * ต่อ domain: ครูแตะเลือก/แก้ระดับเองหรือไม่ (state `manual` ของ AssessmentForm)
+   * - true  = ครูเลือกเอง — ค่าใน abilityLevels คือคำตัดสินของครูจริง
+   * - false = ครูไม่ได้แตะ — เช่น AI มั่นใจแล้วกรอกให้ ครูอาจไม่เคยดู
+   * - ไม่มี key / ไม่ส่งมา = ไม่ทราบ (client เก่า) — stats ห้ามเดาว่าครูเห็นด้วย
+   *
+   * ⚠️ audit อย่างเดียว ห้ามใช้ตัดสิน retrieval/generation · ไม่ใช่ PII
+   */
+  abilityLevelsConfirmedByTeacher?: Record<string, boolean>;
   strengths?: string;
   subjects?: CurriculumSubject[];
   curriculumGrade?: string;
@@ -312,12 +321,26 @@ export interface PlanUsageMetrics {
     majorEditPct: number;
   };
   /**
-   * % ของ domain ที่ครูยืนยันระดับ "ต่างจาก" ที่ classifier เสนอ
-   * (นับเฉพาะ domain ที่ AI เสนอค่ามาจริง — ถ้า AI ไม่เสนอ ครูเลือกเอง ไม่นับ)
+   * % ของ domain ที่ครูแตะเลือกเองแล้ว "ต่างจาก" ที่ classifier เสนอ
+   * ตัวหาร = teacherAgreed + teacherOverrode เท่านั้น (นับเฉพาะ domain ที่ AI เสนอค่ามา)
    *
-   * ยิ่งต่ำ = AI จัดระดับแม่น · null = ยังไม่มีข้อมูลพอ (ยังไม่มี domain ที่ AI เสนอ)
+   * ⚠️ ไม่นับค่าที่ AI กรอกให้แล้วครูไม่ได้แตะ และแถวเก่าที่ไม่ทราบ — ดู abilityConfirmationBreakdown
+   * ⚠️ ตราบใดที่ UI ยังไม่มีปุ่ม "ยืนยัน" ครูที่ดูแล้วเห็นด้วยกับค่าที่ AI กรอกให้จะไม่ถูกนับเป็นการแตะ
+   *    ตัวหารจึงเอียงไปทาง domain ที่ครูไม่เห็นด้วย — อย่าอ่านเป็นความแม่นของ classifier ตรงๆ
+   * null = ยังไม่มี domain ที่ครูแตะเอง
    */
   abilityOverrideRate: number | null;
+  /** แยกทุก domain ที่ AI เสนอค่ามาเป็น 4 กอง — รวมกัน = จำนวน domain ที่ AI เสนอทั้งหมด */
+  abilityConfirmationBreakdown: {
+    /** ครูแตะเลือกเอง และตรงกับที่ AI เสนอ */
+    teacherAgreed: number;
+    /** ครูแตะเลือกเอง และต่างจากที่ AI เสนอ */
+    teacherOverrode: number;
+    /** ครูไม่ได้แตะ — ค่าที่ AI กรอกให้ หรือด้านที่ถูกข้าม · ห้ามนับว่าเห็นด้วย */
+    notConfirmedByTeacher: number;
+    /** แถวเก่าก่อนเริ่มเก็บ abilityLevelsConfirmedByTeacher — ไม่ทราบว่าครูแตะหรือไม่ */
+    unknown: number;
+  };
 }
 
 /**
