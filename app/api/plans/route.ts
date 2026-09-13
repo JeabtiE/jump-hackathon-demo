@@ -237,6 +237,8 @@ export async function POST(request: Request) {
     //    2. abilityLevelsAiSuggested = AI ตีความเป็นระดับอะไร (ข้อเสนอ)
     //    3. abilityLevels            = ครูยืนยันเป็นระดับอะไร (คำตัดสิน) ← retrieval ใช้ตัวนี้ตัวเดียว
     //    เทียบ 2 กับ 3 = หลักฐานว่า classifier แม่นแค่ไหน (pattern เดียวกับ aiOriginal/finalText)
+    //    + abilityLevelsConfirmedByTeacher = ครูแตะระดับ domain นั้นเองหรือไม่
+    //      ไม่มีตัวนี้ ค่าที่ AI กรอกให้แล้วครูไม่ได้ดูจะถูกนับว่า "ครูเห็นด้วย"
     const assessment = await prisma.assessment.create({
       data: {
         studentId: student.id,
@@ -244,6 +246,18 @@ export async function POST(request: Request) {
         abilityFreeText: (body.abilityFreeText ?? {}) as Prisma.InputJsonObject,
         abilityLevelsAiSuggested: (body.abilityLevelsAiSuggested ??
           {}) as Prisma.InputJsonObject,
+        // ⚠️ ไม่ส่งมา (client เก่า) ต้องเก็บเป็น null ห้ามแทนด้วย {} — stats ใช้ null แยก "ไม่ทราบ"
+        //    เก็บเฉพาะค่า boolean กันข้อมูลแปลกปลอมจาก client
+        abilityLevelsConfirmedByTeacher:
+          body.abilityLevelsConfirmedByTeacher &&
+          typeof body.abilityLevelsConfirmedByTeacher === "object" &&
+          !Array.isArray(body.abilityLevelsConfirmedByTeacher)
+            ? (Object.fromEntries(
+                Object.entries(body.abilityLevelsConfirmedByTeacher).filter(
+                  ([, v]) => typeof v === "boolean"
+                )
+              ) as Prisma.InputJsonObject)
+            : undefined,
         strengths: body.strengths?.trim() || null,
       },
     });

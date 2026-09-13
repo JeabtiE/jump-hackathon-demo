@@ -2,6 +2,8 @@
  * scripts/test-api.mjs — ทดสอบ pipeline ทั้งเส้นผ่าน HTTP (mock mode)
  *
  * ต้องเปิด `npm run dev` ค้างไว้ก่อนรัน: npm run test:api
+ * และต้องตั้ง TEST_SESSION_TOKEN = ค่าคุกกี้ authjs.session-token จากเบราว์เซอร์ที่ล็อกอินแล้ว
+ * (ไม่ตั้ง → script หยุดพร้อมพิมพ์วิธีเอาค่ามา)
  * ขั้นไหน fail จะหยุดทันทีพร้อมรายละเอียด response
  *
  * ⚠️ ข้อมูลนักเรียนที่สร้างเป็นข้อมูลปลอมทั้งหมด (code TEST-01)
@@ -31,6 +33,35 @@ function fail(msg, detail) {
   process.exit(1);
 }
 
+// ── session ของครูทดสอบ ──────────────────────────────────────
+// ทุก route ใน app/api/** เรียก requireUserId() (lib/auth-guard.ts) → ไม่มี session = 401 ทุกขั้น
+// ⚠️ ห้ามแก้ด้วยการปิด auth check — ส่งคุกกี้ session จริงจากเบราว์เซอร์มาแทน
+//
+// ชื่อคุกกี้ = ค่า default ของ Auth.js v5 (auth.config.ts ไม่ได้ override cookies)
+//   http  → authjs.session-token
+//   https → __Secure-authjs.session-token  (Auth.js เติม prefix เองเมื่อ protocol เป็น https)
+const SESSION_TOKEN = process.env.TEST_SESSION_TOKEN?.trim();
+const SESSION_COOKIE_NAME = `${BASE.startsWith("https:") ? "__Secure-" : ""}authjs.session-token`;
+
+if (!SESSION_TOKEN) {
+  console.error(`❌ ไม่มี TEST_SESSION_TOKEN — API ต้องมี session ของครูที่ล็อกอินแล้ว (ไม่งั้นได้ 401 ทุกขั้น)
+
+วิธีเอาค่ามาจากเบราว์เซอร์:
+  1. npm run dev แล้วเปิด ${BASE} → ล็อกอินด้วยบัญชี Google ที่อยู่ในตาราง AllowedEmail
+  2. กด F12 เปิด DevTools → แท็บ Application (Chrome/Edge) หรือ Storage (Firefox)
+  3. Cookies → ${BASE} → หาแถวชื่อ ${SESSION_COOKIE_NAME}
+  4. ดับเบิลคลิกช่อง Value แล้วคัดลอกทั้งหมด (ยาวหลายร้อยตัวอักษร ขึ้นต้นด้วย eyJ)
+  5. รันใหม่พร้อมตั้งค่า:
+       Git Bash / macOS / Linux:  TEST_SESSION_TOKEN='<ค่า>' npm run test:api
+       PowerShell:                $env:TEST_SESSION_TOKEN='<ค่า>'; npm run test:api
+
+⚠️ ค่านี้คือกุญแจเข้าบัญชีครูเต็มสิทธิ์ (อ่าน PII นักเรียนได้)
+   ห้าม commit ห้ามใส่ไฟล์ที่แชร์ ห้ามวางในแชทหรือ issue
+   ข้อมูลทดสอบ (TEST-01) จะถูกสร้างเป็นของบัญชีนั้น
+   ถ้าเห็นคุกกี้แตกเป็น ${SESSION_COOKIE_NAME}.0 / .1 แปลว่า token เกิน 4KB — script นี้ยังไม่รองรับ`);
+  process.exit(1);
+}
+
 /** fetch + ตรวจ status ถ้าไม่ตรงที่คาดให้หยุดพร้อม body */
 async function call(method, urlPath, { body, expect = 200 } = {}) {
   const url = `${BASE}${urlPath}`;
@@ -38,11 +69,19 @@ async function call(method, urlPath, { body, expect = 200 } = {}) {
   try {
     res = await fetch(url, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        Cookie: `${SESSION_COOKIE_NAME}=${SESSION_TOKEN}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (e) {
     fail(`ต่อ ${url} ไม่ได้ — npm run dev เปิดอยู่หรือเปล่า?`, e.message);
+  }
+  if (res.status === 401) {
+    fail(
+      `${method} ${urlPath} ตอบ 401 — TEST_SESSION_TOKEN ใช้ไม่ได้ (หมดอายุ / คัดลอกไม่ครบ / คนละ AUTH_SECRET กับ server) ล็อกอินใหม่แล้วคัดลอกค่า ${SESSION_COOKIE_NAME} อีกครั้ง`
+    );
   }
   const expected = Array.isArray(expect) ? expect : [expect];
   if (!expected.includes(res.status)) {
@@ -111,11 +150,18 @@ const planReq = {
     behavior: "frequent_off_task",
     selfHelp: "needs_prompting",
   },
-  // audit ของ classifier — communication ครูยืนยันตรงกับที่ AI เสนอ,
-  // behavior ครูแก้เป็นค่าอื่น → abilityOverrideRate ต้องอยู่ระหว่าง 1-99%
+  // audit ของ classifier — communication ครูแตะเลือกเองและตรงกับที่ AI เสนอ,
+  // behavior ครูแตะแก้เป็นค่าอื่น → abilityOverrideRate ต้องอยู่ระหว่าง 1-99%
+  // selfHelp AI เสนอแล้วครูไม่ได้แตะ (ค่าตรงกัน) → ต้องนับเป็น notConfirmedByTeacher ไม่ใช่ "เห็นด้วย"
   abilityLevelsAiSuggested: {
     communication: "no_speech_gesture_only",
     behavior: "difficulty_transition",
+    selfHelp: "needs_prompting",
+  },
+  abilityLevelsConfirmedByTeacher: {
+    communication: true,
+    behavior: true,
+    selfHelp: false,
   },
   // จงใจใส่ชื่อเด็ก (คำนำหน้า "เด็กชาย") + เบอร์โทร เพื่อดูว่า scrubFreeText กรองออก
   strengths:
@@ -206,23 +252,37 @@ const statsRes = await call("GET", "/api/stats");
 const stats = await statsRes.json();
 console.log(JSON.stringify(stats, null, 2));
 
-if (stats.totalPlans < 1) fail("totalPlans ควร ≥ 1", stats);
-if (stats.finalizedPlans < 1) fail("finalizedPlans ควร ≥ 1 หลัง finalize", stats);
-if (stats.goalEditRate <= 0)
-  fail("goalEditRate ยังเป็น 0 ทั้งที่เพิ่งแก้ goal ไป — การนับ isEdited อาจพัง", stats);
-if (stats.avgDurationSeconds === null)
-  fail("avgDurationSeconds เป็น null ทั้งที่มีแผน finalized แล้ว", stats);
-if (typeof stats.abilityOverrideRate !== "number")
+// /api/stats คืน { mine, all } — แผนที่เพิ่งสร้างเป็นของบัญชีที่ล็อกอิน จึงเช็คที่ mine
+const mine = stats.mine;
+if (!mine) fail("response ไม่มี stats.mine — contract ของ UsageStats อาจเปลี่ยน", stats);
+
+if (mine.totalPlans < 1) fail("totalPlans ควร ≥ 1", mine);
+if (mine.finalizedPlans < 1) fail("finalizedPlans ควร ≥ 1 หลัง finalize", mine);
+if (mine.goalEditRate <= 0)
+  fail("goalEditRate ยังเป็น 0 ทั้งที่เพิ่งแก้ goal ไป — การนับ isEdited อาจพัง", mine);
+if (mine.avgDurationSeconds === null)
+  fail("avgDurationSeconds เป็น null ทั้งที่มีแผน finalized แล้ว", mine);
+if (typeof mine.abilityOverrideRate !== "number")
   fail(
-    "abilityOverrideRate ควรเป็นตัวเลข หลังส่ง abilityLevelsAiSuggested ไปแล้ว (null = ไม่เจอ domain ที่ AI เสนอ)",
-    stats
+    "abilityOverrideRate ควรเป็นตัวเลข หลังส่ง domain ที่ครูแตะเองไปแล้ว (null = ไม่เจอ domain ที่ครูแตะเอง)",
+    mine
   );
-if (stats.abilityOverrideRate < 1 || stats.abilityOverrideRate > 99)
+if (mine.abilityOverrideRate < 1 || mine.abilityOverrideRate > 99)
   fail(
     "abilityOverrideRate ควรอยู่ระหว่าง 1-99% (มีทั้ง domain ที่ตรงและที่ครูแก้) — การเทียบ suggested vs confirmed อาจพัง",
-    stats
+    mine
   );
-console.log(`✅ สถิติขยับถูกต้อง: goalEditRate=${stats.goalEditRate}% avgDurationSeconds=${stats.avgDurationSeconds} abilityOverrideRate=${stats.abilityOverrideRate}%`);
+
+// domain ที่ AI กรอกให้แล้วครูไม่ได้แตะ ต้องแยกกองของตัวเอง ห้ามไหลไปรวมกับ "เห็นด้วย"
+const breakdown = mine.abilityConfirmationBreakdown;
+if (!breakdown) fail("ไม่มี abilityConfirmationBreakdown ใน stats.mine", mine);
+if (breakdown.teacherAgreed < 1) fail("teacherAgreed ควร ≥ 1 (communication)", breakdown);
+if (breakdown.teacherOverrode < 1) fail("teacherOverrode ควร ≥ 1 (behavior)", breakdown);
+if (breakdown.notConfirmedByTeacher < 1)
+  fail("notConfirmedByTeacher ควร ≥ 1 (selfHelp ครูไม่ได้แตะ) — อาจถูกนับรวมเป็นเห็นด้วย", breakdown);
+console.log(
+  `✅ สถิติขยับถูกต้อง: goalEditRate=${mine.goalEditRate}% avgDurationSeconds=${mine.avgDurationSeconds} abilityOverrideRate=${mine.abilityOverrideRate}% breakdown=${JSON.stringify(breakdown)}`
+);
 
 // ═════════════ ขั้นที่ 6: export .docx ═════════════
 
@@ -303,5 +363,8 @@ console.log(`\n${"═".repeat(60)}`);
 console.log("🎉 ผ่านครบทั้ง 7 ขั้น — pipeline ทำงานได้ทั้งเส้นใน mock mode");
 console.log("═".repeat(60));
 console.log(`\n📌 studentId สำหรับลบข้อมูลทดสอบทีหลัง: ${student.id}`);
-console.log(`   ลบด้วย: curl -X DELETE ${BASE}/api/students/${student.id}`);
+// พิมพ์ชื่อตัวแปร ไม่พิมพ์ค่า token จริงลงจอ/log
+console.log(
+  `   ลบด้วย: curl -X DELETE -H "Cookie: ${SESSION_COOKIE_NAME}=$TEST_SESSION_TOKEN" ${BASE}/api/students/${student.id}`
+);
 console.log(`   (หรือรัน script นี้ซ้ำ — จะลบ TEST-01 เดิมให้เองก่อนสร้างใหม่)`);

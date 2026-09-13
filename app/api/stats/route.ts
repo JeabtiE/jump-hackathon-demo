@@ -71,6 +71,19 @@ function asRecord(value: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * Json column → Record<string,boolean> | null
+ * null = แถวเก่าที่ไม่มีข้อมูล (หรือรูปแบบผิด) → ผู้เรียกต้องนับเป็น "ไม่ทราบ" ห้ามเดา
+ */
+function asBooleanRecord(value: unknown): Record<string, boolean> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "boolean") out[k] = v;
+  }
+  return out;
+}
+
 // ── ตัวกรองตามเจ้าของ ────────────────────────────────────────
 // userId = null แปลว่า "ทั้งระบบ" (ชุด all) — ไม่ใส่เงื่อนไขอะไรเลย
 //
@@ -90,7 +103,11 @@ function mediaWhere(userId: string | null): Prisma.PlanMediaWhereInput {
 }
 
 function assessmentWhere(userId: string | null): Prisma.AssessmentWhereInput {
-  // นับเฉพาะที่ AI เคยเสนอค่ามาจริง — ที่ครูเลือกเองล้วนไม่ใช่ "ครูแก้ของ AI"
+  // ตัวกรองนี้ตัดแค่แถวที่ abilityLevelsAiSuggested เป็น null (แถวเก่าก่อนมีฟิลด์นี้)
+  // ⚠️ ไม่ได้รับประกันว่า AI เคยเสนอค่ามาจริง — POST /api/plans เก็บ {} เมื่อไม่มีข้อเสนอ
+  //    แถว {} จึงผ่านตัวกรองมาด้วย
+  // ความถูกต้องของตัวเลขมาจาก loop ใน computeMetrics ที่วนจาก entry ของ suggested
+  // ไม่ใช่จากตัวกรองนี้ — แถว {} ไม่มี entry จึงไม่ถูกนับเข้ากองไหนเลย
   const base: Prisma.AssessmentWhereInput = {
     abilityLevelsAiSuggested: { not: Prisma.DbNull },
   };
@@ -152,30 +169,48 @@ async function computeMetrics(userId: string | null): Promise<PlanUsageMetrics> 
       : null;
 
   // ── ability override rate — classifier แม่นแค่ไหน ──
-  // เทียบ abilityLevelsAiSuggested (ข้อเสนอ AI) กับ abilityLevels (คำตัดสินครู)
+  // เทียบ abilityLevelsAiSuggested (ข้อเสนอ AI) กับ abilityLevels (ค่าที่ส่งไป retrieval)
+  // ⚠️ abilityLevels เป็นคำตัดสินของครูจริงเฉพาะ domain ที่ครูแตะเอง — ค่าที่ AI กรอกให้ก็อยู่ในนั้นด้วย
   // ⚠️ แยก query/คำนวณจาก metric อื่นทั้งหมด — เป็นคนละหน่วยนับ (นับ "domain" ไม่ใช่ "แผน")
+  // ⚠️ ตัวหารของ rate = เฉพาะ domain ที่ครูแตะเองจริง (abilityLevelsConfirmedByTeacher = true)
+  //    ค่าที่ AI กรอกให้แล้วครูไม่ได้แตะ ห้ามนับว่า "ครูเห็นด้วย" — ไม่งั้นความแม่นสูงเกินจริง
+  //    แถวเก่าที่ไม่มีฟิลด์นี้ หรือไม่มี key ของ domain นั้น = "ไม่ทราบ" ห้ามเดา
   const assessments = await prisma.assessment.findMany({
     where: assessmentWhere(userId),
-    select: { abilityLevels: true, abilityLevelsAiSuggested: true },
+    select: {
+      abilityLevels: true,
+      abilityLevelsAiSuggested: true,
+      abilityLevelsConfirmedByTeacher: true,
+    },
   });
 
-  let overrideDenominator = 0;
-  let overrideNumerator = 0;
+  const abilityConfirmationBreakdown = {
+    teacherAgreed: 0,
+    teacherOverrode: 0,
+    notConfirmedByTeacher: 0,
+    unknown: 0,
+  };
   for (const a of assessments) {
     const suggested = asRecord(a.abilityLevelsAiSuggested);
     const confirmed = asRecord(a.abilityLevels);
-    // ⚠️ วนจาก suggested เท่านั้น — domain ที่ AI ไม่ได้เสนอ (confidence ต่ำ/ครูพิมพ์เอง)
-    //    ไม่ถือเป็น "ครูแก้ของ AI" จึงไม่นับเข้าตัวหาร
+    const touched = asBooleanRecord(a.abilityLevelsConfirmedByTeacher);
+    // วนจาก suggested — นับเฉพาะ domain ที่ AI เสนอค่ามา
+    // (รวม confidence ต่ำ ซึ่ง AssessmentForm ส่ง suggestedLevel มาด้วยแม้ไม่ได้กรอกให้)
     for (const [domain, aiLevel] of Object.entries(suggested)) {
       if (!aiLevel) continue;
-      overrideDenominator += 1;
-      if (confirmed[domain] !== aiLevel) overrideNumerator += 1;
+      const byTeacher = touched?.[domain];
+      if (byTeacher === undefined) abilityConfirmationBreakdown.unknown += 1;
+      else if (!byTeacher) abilityConfirmationBreakdown.notConfirmedByTeacher += 1;
+      else if (confirmed[domain] === aiLevel) abilityConfirmationBreakdown.teacherAgreed += 1;
+      else abilityConfirmationBreakdown.teacherOverrode += 1;
     }
   }
 
+  const teacherConfirmedDomains =
+    abilityConfirmationBreakdown.teacherAgreed + abilityConfirmationBreakdown.teacherOverrode;
   const abilityOverrideRate =
-    overrideDenominator > 0
-      ? Math.round((overrideNumerator / overrideDenominator) * 100)
+    teacherConfirmedDomains > 0
+      ? Math.round((abilityConfirmationBreakdown.teacherOverrode / teacherConfirmedDomains) * 100)
       : null;
 
   const editedGoals = goals.filter((g) => g.aiOriginal.trim() !== g.finalText.trim()).length;
@@ -215,6 +250,7 @@ async function computeMetrics(userId: string | null): Promise<PlanUsageMetrics> 
         : 0,
     goalEditBreakdown,
     abilityOverrideRate,
+    abilityConfirmationBreakdown,
   };
 }
 

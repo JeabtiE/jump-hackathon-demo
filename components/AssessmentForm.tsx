@@ -58,6 +58,8 @@ export default function AssessmentForm({
     abilityFreeText: AbilityFreeText;
     /** ค่าที่ classifier เสนอต่อ domain ก่อนครูแก้ — audit อย่างเดียว */
     abilityLevelsAiSuggested: Record<string, string>;
+    /** ต่อ domain: ครูแตะเลือก/แก้ระดับเองหรือไม่ (state manual) — audit อย่างเดียว */
+    abilityLevelsConfirmedByTeacher: Record<string, boolean>;
     strengths: string;
     academicYear: string;
     term: string;
@@ -199,6 +201,8 @@ export default function AssessmentForm({
       abilityLevels: levels,
       abilityFreeText: texts,
       abilityLevelsAiSuggested: aiSuggested,
+      // ครูแตะระดับ domain นั้นเองหรือไม่ — ส่งค่า state manual ตามที่มี ไม่ตีความเพิ่ม
+      abilityLevelsConfirmedByTeacher: { ...manual },
       strengths,
       academicYear,
       term,
