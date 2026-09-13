@@ -47,7 +47,7 @@
 | --- | --- | --- |
 | `paper` | `#FDFCF9` | พื้นหลังหน้า, พื้นการ์ด, พื้นช่องกรอก, หน้าเอกสาร — กระดาษแผ่นเดียวทั้งแอป |
 | `ink` | `#1C2233` | ข้อความหลัก, heading, ค่าที่กรอก |
-| `muted` | `#5A6072` | label รอง, hint, placeholder, **เส้นขอบ control ทุกชนิด** |
+| `muted` | `#5A6072` | label รอง, hint, placeholder, **เส้นขอบ control ทุกชนิด** (ใช้ผ่านชื่อ `border-control`) |
 | `rule` | `#D6D1C4` | เส้นบรรทัด, เส้นขอบการ์ด, เส้นคั่น section — เส้นตกแต่ง/จัดกลุ่มเท่านั้น |
 | `accent` | `#1F4E9E` | "หมึกน้ำเงินลงนาม" — ปุ่มหลัก, ลิงก์, focus ring, สถานะที่ **ครูแตะ/เลือก/ยืนยันเองแล้ว** |
 | `attention` | `#8A5300` | **warning** — ต้องให้ครูดูและตัดสินเอง: ความไม่สอดคล้อง, "แก้ไขจากที่ AI ร่าง", คำเตือน PII |
@@ -55,8 +55,10 @@
 
 **เส้นขอบ 2 ตัวหน้าตาใกล้กัน — ห้ามหยิบผิด**
 
-- `rule`  = ขอบการ์ดและเส้นคั่นเท่านั้น
-- `muted` = ขอบ input ทุกชนิด (`input`, `textarea`, `select`) — WCAG 1.4.11 ต้องการ 3:1 สำหรับขอบ control และ `rule` อยู่ที่ประมาณ 1.5:1 ซึ่งไม่ผ่าน
+- `border-rule` = ขอบการ์ดและเส้นคั่นเท่านั้น
+- `border-control` = ขอบ input ทุกชนิด (`input`, `textarea`, `select`) — WCAG 1.4.11 ต้องการ 3:1 สำหรับขอบ control และ `rule` อยู่ที่ประมาณ 1.5:1 ซึ่งไม่ผ่าน
+  - `border-control` กับ `border-muted` ได้สีเดียวกัน (= `muted`) แต่ **ให้ใช้ `border-control`** เพราะชื่อบอกหน้าที่ ไม่ใช่บอกสี
+    ถ้าวันหนึ่งสีขอบ control ต้องต่างจากสีข้อความรอง แก้ที่ `tailwind.config.ts` (`borderColor.control`) จุดเดียว
 
 **Contrast บน `paper` #FDFCF9** (AA ข้อความปกติ ≥ 4.5:1 · AAA ≥ 7:1)
 
@@ -107,7 +109,7 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 | `text-slate-900` / `-800` / `-700`, `hover:text-slate-700` | `text-ink` |
 | `text-slate-600` / `-500` / `-400`, `text-gray-500` / `-400`, `hover:text-slate-600`, `disabled:text-slate-400` | `text-muted` |
 | `border-slate-200` (การ์ด, เส้นคั่น), `border-dashed border-slate-300` (กล่อง empty state) | `border-rule` |
-| `border-slate-300`, `hover:border-slate-300` บน **control** (input/textarea/select/ปุ่มรอง) | `border-muted` |
+| `border-slate-300`, `hover:border-slate-300` บน **control** (input/textarea/select/ปุ่มรอง) | `border-control` (สีเดียวกับ `border-muted` แต่ใช้ชื่อนี้ — ดู §2 "เส้นขอบ 2 ตัว") |
 | `bg-teal-600`, `hover:bg-teal-700` | `bg-accent` / `accent` 90% |
 | `text-teal-600` / `-700` / `-800` / `-900`, `hover:text-teal-700` / `-800`, `border-teal-500` / `-300` / `-200`, `focus:ring-teal-500`, `border-t-teal-500` (spinner) | `accent` — **ยกเว้น chip AI กรอกให้ใน `AssessmentForm.tsx` ~279–301 ดู §4.8** |
 | `bg-teal-50`, `bg-teal-50/40`, `bg-teal-100` | `accent` 8% — ยกเว้นเดียวกัน |
@@ -125,7 +127,9 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 
 | บทบาท | ฟอนต์ | ใช้ที่ไหน |
 | --- | --- | --- |
-| **UI** | **IBM Plex Sans Thai Looped** (400 / 500 / 600) | ทุกอย่างในแอป: label, ปุ่ม, ช่องกรอก, heading, ข้อความ |
+| **UI** | **IBM Plex Sans Thai Looped** (400 / 500 / 600 / 700) | ทุกอย่างในแอป: label, ปุ่ม, ช่องกรอก, heading, ข้อความ |
+
+- **700 เป็นค่าถาวร** — `font-bold` ถูกใช้จริงหลายจุด ถ้าไม่โหลด เบราว์เซอร์จะทำ faux bold ซึ่งกับฟอนต์ไทยเส้นจะบวมและหัวตัวอักษรเสียรูป
 
 - ใช้แบบ **มีหัว (Looped)** เพราะอ่านง่ายกว่าสำหรับผู้อ่านทั่วไปและตัวเล็กบนมือถือ
 - **Phase 2.1 โหลดฟอนต์ตัวเดียว** ด้วย `next/font/google` subsets `['thai','latin']`, `display: 'swap'` ผูกเป็น CSS variable
@@ -193,7 +197,7 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 ลำดับจากบนลงล่างเสมอ: **label (`label`) → hint (`hint`) → ช่องกรอก → ข้อความสถานะ/ข้อผิดพลาด**
 
 - ช่องกรอก: พื้น `paper`, สูงอย่างน้อย 44px, ข้อความ 16px
-- **ขอบช่องกรอก = 1px `muted` เสมอ ห้ามใช้ `rule`** (เหตุผลดู §2 "เส้นขอบ 2 ตัว")
+- **ขอบช่องกรอก = `border border-control` (1px สี `muted`) เสมอ ห้ามใช้ `border-rule`** (เหตุผลดู §2 "เส้นขอบ 2 ตัว")
 - focus: ring 2px `accent` + offset 2px — ต้องเห็นชัดทุก interactive element (Tab ไล่ได้ทั้งหน้า)
 - ช่องที่ไม่บังคับเขียน "(ไม่บังคับ)" ต่อท้าย label — ไม่ใช้ `*` อย่างเดียว
 - ระยะห่างระหว่าง field `16px`
@@ -352,11 +356,6 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 ### บันทึกนอกขอบเขต visual (ไม่ใช่งาน Phase 5 แต่ต้องรู้)
 
 **C1 — เมตริก ability override rate สูงเกินจริงเรื่องความแม่นของ classifier** · ✅ **แก้แล้ว 13 ก.ย. 2569 (PR #31)**
-
-> ⚠️ PR #31 merge เข้า `main` แล้ว (merge commit `219651c` · commits `604d5fc`, `4821642`, `251d443`)
-> แต่ `feat/visual-system` แตกออกมาก่อนหน้านั้นและยังไม่ได้ดึง `main` ล่าสุดเข้ามา (ตรวจ 13 ก.ย. 2569)
-> → grep ใน branch นี้จะยังเจอโค้ดแบบเดิม (ไม่มี `abilityLevelsConfirmedByTeacher`) นั่นไม่ได้แปลว่ายังไม่แก้
-> ตรวจว่า branch ที่อ่านอยู่มีงานนี้หรือยัง: `git merge-base --is-ancestor 219651c HEAD && echo มีแล้ว || echo ยังไม่มี`
 
 **ปัญหาเดิม** — กรณี `confidence === "high"` `AssessmentForm` คัดลอกค่า AI เข้า `abilityLevels` ทันทีโดยครูไม่ได้แตะ
 และ state `manual` (ครูแตะเองหรือไม่) ไม่ถูกส่งไป API → `/api/stats` นับ domain ที่ครูไม่เคยดูว่า "ครูเห็นด้วย"
