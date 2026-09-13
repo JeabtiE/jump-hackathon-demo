@@ -121,6 +121,10 @@ model Assessment {
   /// ค่า enum ที่ AI เสนอจาก abilityFreeText ก่อนครูแก้ — audit แบบเดียวกับ aiOriginal
   /// ห้ามเขียนทับหลังบันทึกครั้งแรก และห้ามใช้แทน abilityLevels
   abilityLevelsAiSuggested Json?
+  /// { "reading": true, "communication": false } — ครูแตะเลือก/แก้ระดับ domain นั้นเองหรือไม่
+  /// (state `manual` ของ AssessmentForm) false = ค่าที่ AI กรอกให้ ครูไม่ได้แตะ
+  /// null = แถวเก่าก่อนมีฟิลด์นี้ → stats นับเป็น "ไม่ทราบ" ห้ามเดา · audit อย่างเดียว ไม่ใช่ PII
+  abilityLevelsConfirmedByTeacher Json?
   /// จุดเด่น/สิ่งที่ทำได้ — ⚠️ ค่ารวมทั้งแผน (legacy) ตั้งแต่มี PlanDomainSection
   /// แล้ว จุดเด่น/จุดที่ควรพัฒนาแบบละเอียดต่อ domain ย้ายไปอยู่ที่นั่นแทน
   /// ฟิลด์นี้ยังคงไว้เพื่อ backward-compat กับแผนเก่า และเป็น fallback

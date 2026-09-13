@@ -44,6 +44,8 @@ export default function HomeClient({ authSlot }: { authSlot: React.ReactNode }) 
     abilityFreeText: AbilityFreeText;
     /** ค่าที่ AI เสนอต่อ domain ก่อนครูแก้ — audit อย่างเดียว ไม่ใช้ตัดสินใจ */
     abilityLevelsAiSuggested: Record<string, string>;
+    /** ต่อ domain: ครูแตะเลือก/แก้ระดับเองหรือไม่ — audit อย่างเดียว ไม่ใช้ตัดสินใจ */
+    abilityLevelsConfirmedByTeacher: Record<string, boolean>;
     strengths: string;
     academicYear: string;
     term: string;
