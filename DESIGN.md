@@ -317,7 +317,7 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 | ปุ่ม | ไฟล์:บรรทัด | ข้อความที่คัดลอก | ปลายทาง |
 | --- | --- | --- | --- |
 | "คัดลอกเป้าหมายระยะสั้น" | `PlanReview.tsx:483–486` | `selectedGoalsText` (`:431–436`) — `finalText` ของทุกเป้าหมายที่ติ๊ก `isSelected` ข้ามทุก section คั่นด้วยบรรทัดว่าง | ระบบ SET |
-| ปุ่ม "คัดลอก" ต่อรายการสื่อ | `PlanReview.tsx:304` | `mediaCopyText(media)` (`:263–266`) ของ **รายการนั้นรายการเดียว** 1 บรรทัด: `[รหัส] ชื่อสื่อ (บัญชี X, ราคา) — เหตุผล: …` (ไม่ได้เช็ค `isApproved`) | ระบบคูปอง |
+| ปุ่ม "คัดลอก" ต่อรายการสื่อ | `PlanReview.tsx:304` | `mediaCopyText(media)` (`:263–266`) ของ **รายการนั้นรายการเดียว** 1 บรรทัด: `[รหัส] ชื่อสื่อ (บัญชี X, ราคา) — เหตุผล: …` (ไม่ได้เช็ค `isApproved` — ดู B8) | ระบบคูปอง |
 | "คัดลอกทั้งหมด" (ส่วนที่ 6) | `PlanReview.tsx:518–521` | `approvedMediaText` (`:439–442`) — `mediaCopyText` ของ **ทุกรายการที่ติ๊ก `isApproved`** คั่นด้วยบรรทัดว่าง | ระบบคูปอง |
 
 **ยืนยันแล้ว: ข้อความชุดเดียวของระบบคูปองไม่ได้ถูกหั่นเป็นสองปุ่ม** — "คัดลอกทั้งหมด" ให้ชุดเต็มในปุ่มเดียว
@@ -347,30 +347,41 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 | B5 | **⚠ inline ในตำแหน่งที่เกี่ยวข้อง** | `consistencyWarnings` เป็น `string[]` รวมที่หัว PlanReview (`:464–475`) ไม่มีข้อมูลว่าผูกกับช่อง/รายการไหน | ไม่ได้ — **ต้องแก้ `lib/types.ts` ให้ warning มีตำแหน่งผูก ซึ่งเป็นไฟล์ร่วม (CONTRACT frontend↔API) ต้องแจ้งทีมก่อน** ระหว่างนี้แสดงรวมที่หัวแบบเดิม |
 | B6 | **chip "ยืนยัน" ในแถบที่ AI เสนอระดับความสามารถ** (44px ตาม §4.4) | ไม่มี — กรณี AI มั่นใจ (`confidence === "high"`) ระบบกรอกเป็นค่าที่ยืนยันแล้วทันที (`AssessmentForm.tsx:129–135`) ครูทำได้แค่กด "ไม่ใช่? แก้ระดับ" · ระหว่างนี้ใช้ tone กลางตาม §4.8 | ไม่ได้ — ต้องเพิ่มขั้นตอนกดยืนยัน (ขัด §5 ข้อ 8–9) ต้องตัดสินใจก่อน |
 | B7 | **ฟอนต์ Sarabun** | ไม่ต้องโหลดจนกว่าจะมี B2 | — |
+| B8 | **ปุ่มคัดลอกต่อรายการสื่อ แยกรายการที่ยังไม่ได้ตรวจให้เห็นชัด** — รายการที่ยังไม่ติ๊ก `isApproved` ใช้ tone `attention` + ⚠ + ป้ายบอกว่ายังไม่ได้ตรวจ (เช่น "⚠ คัดลอก · ยังไม่ได้ตรวจ") **แต่ยังกดได้** · **ห้าม disable ปุ่มหรือบล็อกการคัดลอก** — ขัด §5 ข้อ 5 (ห้าม auto-fix ครูตัดสินเอง) | `PlanReview.tsx:304` คัดลอก `mediaCopyText(media)` โดยไม่เช็ค `isApproved` และปุ่มหน้าตาเหมือนกันทุกรายการ → ครูคัดลอกสื่อที่ยังไม่ได้ตรวจไปวางในระบบคูปองได้ = คำขอเบิกงบที่ไม่มีใครอนุมัติ | ได้ — สลับ className/ข้อความป้ายตาม `media.isApproved` ที่มีอยู่แล้ว ไม่เพิ่ม handler หรือ state |
 
 ### บันทึกนอกขอบเขต visual (ไม่ใช่งาน Phase 5 แต่ต้องรู้)
 
-**C1 — เมตริก ability override rate สูงเกินจริงเรื่องความแม่นของ classifier** · ตรวจในโค้ดแล้ว: **เป็นแบบนั้นจริง**
+**C1 — เมตริก ability override rate สูงเกินจริงเรื่องความแม่นของ classifier** · ✅ **แก้แล้ว 13 ก.ย. 2569 (PR #31)**
 
-| ขั้น | ไฟล์:บรรทัด | เกิดอะไรขึ้น |
-| --- | --- | --- |
-| 1 | `components/AssessmentForm.tsx:127`, `:129–135` | ผล classifier มา → ตั้ง `manual[domain] = false` · ถ้า `confidence === "high"` คัดลอก `suggestedLevel` เข้า `abilityLevels` ทันที โดยครูไม่ได้แตะ |
-| 2 | `components/AssessmentForm.tsx:183–186` | ตอนกด "สร้างแผน" `abilityLevels` ที่ส่งไป = ค่าที่ AI กรอกให้ |
-| 3 | `components/AssessmentForm.tsx:194–197`, `:201` | `abilityLevelsAiSuggested` = `suggestedLevel` ของทุก domain ที่มีผล (ค่าเดียวกัน) |
-| 4 | `components/AssessmentForm.tsx:80`, `:231` | state `manual` (ครูแตะเองหรือไม่) ใช้แค่ใน UI — **ไม่ถูกส่งไป API** |
-| 5 | `app/api/plans/route.ts:243–246` | บันทึกทั้งสองชุดลง `Assessment` ตามที่ส่งมา |
-| 6 | `app/api/stats/route.ts:164–173` | วนจาก `suggested` → ตัวหาร +1 · นับเป็น override เฉพาะ `confirmed[domain] !== aiLevel` (`:172`) |
+> ⚠️ PR #31 merge เข้า `main` แล้ว (merge commit `219651c` · commits `604d5fc`, `4821642`, `251d443`)
+> แต่ `feat/visual-system` แตกออกมาก่อนหน้านั้นและยังไม่ได้ดึง `main` ล่าสุดเข้ามา (ตรวจ 13 ก.ย. 2569)
+> → grep ใน branch นี้จะยังเจอโค้ดแบบเดิม (ไม่มี `abilityLevelsConfirmedByTeacher`) นั่นไม่ได้แปลว่ายังไม่แก้
+> ตรวจว่า branch ที่อ่านอยู่มีงานนี้หรือยัง: `git merge-base --is-ancestor 219651c HEAD && echo มีแล้ว || echo ยังไม่มี`
 
-ผล: domain ที่ AI มั่นใจแล้วครูไม่เคยดู ถูกนับเป็น "ครูเห็นด้วย" → `abilityOverrideRate` ต่ำ → ดูเหมือน classifier แม่นกว่าความจริง
-และในข้อมูลที่บันทึกไว้แล้วแยกย้อนหลังไม่ได้ เพราะไม่มีหลักฐานว่าครูแตะหรือไม่
+**ปัญหาเดิม** — กรณี `confidence === "high"` `AssessmentForm` คัดลอกค่า AI เข้า `abilityLevels` ทันทีโดยครูไม่ได้แตะ
+และ state `manual` (ครูแตะเองหรือไม่) ไม่ถูกส่งไป API → `/api/stats` นับ domain ที่ครูไม่เคยดูว่า "ครูเห็นด้วย"
+→ ความแม่นของ classifier สูงเกินจริงอย่างเป็นระบบ
 
-ข้อสังเกตเพิ่ม:
-- comment ที่ `app/api/stats/route.ts:167` บอกว่า domain ที่ confidence ต่ำไม่ถูกนับ แต่ `AssessmentForm.tsx:192–196` ส่ง `suggestedLevel` ของกรณี confidence ต่ำไปด้วย จึงถูกนับเข้าตัวหาร
-  (กรณีนี้ครูต้องเลือกเองจริง จึงไม่ทำให้ตัวเลขเพี้ยน — แค่ comment ไม่ตรงโค้ด)
-- ครูที่เปิด "แก้ระดับ" แล้วเลือกค่าเดิม ได้ผลเหมือนคนไม่แตะในข้อมูล (แยกไม่ออกทั้งสองทาง)
+**สิ่งที่แก้** (เพิ่มแบบ additive — client เก่าที่ไม่ส่งฟิลด์ใหม่ยังทำงานได้)
 
-แก้ได้ต้องส่งสถานะ "ครูแตะหรือไม่" ต่อ domain ไปเก็บ → กระทบ `lib/types.ts`, `app/api/plans/route.ts`, `prisma/schema.prisma`, `app/api/stats/route.ts`
-→ นอกขอบเขตงาน visual ต้องแจ้งทีมและตัดสินใจแยก · ระหว่างนี้ตัวเลขนี้ในหน้า `/stats` ควรอ่านว่าเป็น **ขอบล่าง** ของอัตราที่ครูแก้
+| ไฟล์ | เปลี่ยนอะไร |
+| --- | --- |
+| `lib/types.ts` | `CreatePlanRequest.abilityLevelsConfirmedByTeacher?: Record<string, boolean>` (optional) · `PlanUsageMetrics.abilityConfirmationBreakdown` |
+| `prisma/schema.prisma` | `Assessment.abilityLevelsConfirmedByTeacher Json?` (nullable · ไม่ใช่ PII) |
+| `components/AssessmentForm.tsx` | ส่ง `{ ...manual }` ไปกับ request — ไม่แตะตรรกะที่ตัดสินว่า `manual` เป็น true/false |
+| `app/api/plans/route.ts` | บันทึกเฉพาะค่า boolean · ไม่ส่งมา = เก็บ `null` (ห้ามแทนด้วย `{}` เพราะ stats ใช้แยก "ไม่ทราบ") |
+| `app/api/stats/route.ts` | แยกทุก domain ที่ AI เสนอเป็น 4 กอง: `teacherAgreed` / `teacherOverrode` / `notConfirmedByTeacher` / `unknown` · ตัวหารของ `abilityOverrideRate` = สองกองแรกเท่านั้น · แถวเก่า = `unknown` ห้ามเดา · แก้ comment ที่ไม่ตรงโค้ดด้วย |
+| `app/stats/StatsClient.tsx` | หมายเหตุใต้การ์ดแสดงจำนวนของ 3 กอง แทนข้อความ "ยิ่งต่ำ = AI จัดระดับแม่น" |
+| `scripts/test-api.mjs` | ขั้นที่ 5 อ่าน `stats.mine` และเช็คว่า domain ที่ครูไม่ได้แตะไปอยู่กอง `notConfirmedByTeacher` · ทุก request ส่งคุกกี้ `authjs.session-token` จาก `TEST_SESSION_TOKEN` (ไม่ตั้ง = หยุดพร้อมวิธีเอาค่า) — ไม่ได้ปิด auth check |
+
+**ข้อจำกัดที่เหลืออยู่**
+
+- **จนกว่า B6 (ปุ่ม "ยืนยัน") จะเสร็จ กอง `notConfirmedByTeacher` รวมคนสองกลุ่มที่แยกกันไม่ได้:**
+  ครูที่ไม่เคยดูค่าที่ AI กรอกให้ และครูที่ดูแล้วเห็นด้วย (UI ไม่มีทางกดยืนยันโดยไม่เปลี่ยนค่า)
+  → **ยังอ้าง `abilityOverrideRate` เป็น "ความแม่นของ classifier" ไม่ได้**
+- ผลต่อตัวเลข: กองที่ครูแตะเอง (ตัวหาร) เอียงไปทางกรณีที่ครูไม่เห็นด้วย เพราะครูที่เห็นด้วยกับค่า AI มักไม่แตะ
+  → `abilityOverrideRate` มีแนวโน้มสูงกว่าความจริง (ทิศตรงข้ามกับปัญหาเดิม) ต้องอ่านคู่กับทั้ง 4 กองเสมอ
+- ข้อมูลที่บันทึกก่อน PR #31 อยู่กอง `unknown` ทั้งหมด แยกย้อนหลังไม่ได้
 
 ---
 
