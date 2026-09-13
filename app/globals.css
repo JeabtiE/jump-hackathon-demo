@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: "Sarabun", "Noto Sans Thai", system-ui, sans-serif;
+/*
+ * Design tokens — DESIGN.md §2 (สี) · §3 (typography) · §4.1 (มุมโค้ง)
+ * ค่าจริงอยู่ที่นี่ที่เดียว tailwind.config.ts อ่านผ่าน CSS variable
+ *
+ * สีเก็บเป็นช่อง RGB คั่นด้วยช่องว่าง (ไม่ใช่ hex) เพื่อให้ Tailwind ใส่ opacity ได้
+ *   เช่น bg-accent/[.08] = "accent 8%" ตามตาราง derive ใน DESIGN.md §2
+ * ใช้ใน CSS ตรงๆ ต้องครอบ rgb():  color: rgb(var(--color-ink));
+ */
+@layer base {
+  :root {
+    --color-paper: 253 252 249; /* #FDFCF9 พื้นหน้า / การ์ด / ช่องกรอก */
+    --color-ink: 28 34 51; /* #1C2233 ข้อความหลัก */
+    --color-muted: 90 96 114; /* #5A6072 label รอง / hint / ขอบ control ทุกชนิด */
+    --color-rule: 214 209 196; /* #D6D1C4 ขอบการ์ด / เส้นคั่นเท่านั้น — ห้ามใช้เป็นขอบ control (≈1.5:1) */
+    --color-accent: 31 78 158; /* #1F4E9E ปุ่มหลัก / ลิงก์ / focus / สถานะที่ครูแตะเอง */
+    --color-attention: 138 83 0; /* #8A5300 warning — ครูต้องตัดสินเอง */
+    --color-danger: 158 43 37; /* #9E2B25 error เท่านั้น */
+
+    --radius-box: 4px; /* การ์ด / ช่องกรอก / ปุ่ม */
+  }
+
+  /*
+   * ⚠️ ไม่ตั้งสีพื้นหรือสีตัวอักษรที่นี่ — body ยังใช้ bg-slate-50 จาก layout.tsx
+   *    การแทนที่ class เดิมเป็นงาน Phase 5
+   */
+  body {
+    font-family: theme("fontFamily.ui");
+    /* ข้อความไทยต้อง ≥ 1.75 ไม่งั้นสระบน/วรรณยุกต์ชนบรรทัดข้างเคียง */
+    line-height: 1.75;
+  }
 }
