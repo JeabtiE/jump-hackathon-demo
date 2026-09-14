@@ -38,8 +38,10 @@
 
 ## สถานะ
 
-- 14 ก.ย. 2569: `DesignSync` ตอบว่าต้อง design-system authorization — ผู้ใช้ต้องรัน `/design-login` จาก session แบบ interactive
-  ยังไม่มี `projectId` / ยังไม่ได้สร้างโปรเจกต์ใน Claude Design
+- 14 ก.ย. 2569: `/design-login` ผ่านแล้ว · สร้างโปรเจกต์ design system **"IEP GEN"**
+  `projectId: a4886d5e-01b9-4ade-9e1d-c0e6ba65edc5` · อัปโหลด 7 component ครั้งแรก (43 ไฟล์)
+  - ไม่อัปโหลด dot-file (`.render-check.json` ฯลฯ) และ `_screenshots/` — เป็นผลตรวจในเครื่อง
+  - โปรเจกต์ "Modernist" ในบัญชีเดียวกันไม่เกี่ยวกับ iep-gen ห้าม push เข้า
 
 ## Re-sync risks
 
