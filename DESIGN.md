@@ -91,14 +91,28 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 | --- | --- |
 | พื้นรายการที่ครูเลือกเอง (goal/media ที่ติ๊กแล้ว, นักเรียนที่เลือก, chip ระดับที่ครูเลือกเอง) | `accent` 8% บน `paper` + border `accent` |
 | พื้นกล่อง warning | `attention` 10% บน `paper` + border `attention` |
-| hover ของปุ่มรอง/แถวรายการ, พื้น loading, พื้น chip tone กลาง | `ink` 4% |
+| hover ของปุ่มรอง/แถวรายการ, พื้น loading, พื้น chip tone `neutral` | `ink` 4% |
 | hover ของปุ่มหลัก | `accent` 90% |
 | ปุ่ม disabled | พื้น `rule` + ข้อความ `muted` |
 
-**Chip tones** (สำหรับ `components/ui/Chip.tsx`): `verified` → `accent` · `pending` (tone กลาง) → `muted` · `warning` → `attention`
+**Chip tones** (`components/ui/Chip.tsx`): `verified` → `accent` · `neutral` → `muted` · `attention` → `attention` · `danger` → `danger`
 
+- **ชื่อ tone ต้องตรงกับชื่อ token** — ไม่งั้นทุกคนต้องแปลในหัวทุกครั้ง (เช่น `warning` คือ `attention`) และจะหยิบผิด
+  `attention` / `danger` จึงใช้ชื่อ token ตรงๆ
+  ยกเว้น `verified` / `neutral` ที่ตั้งชื่อตาม **สถานะ** เพราะความหมาย "ครูแตะเองแล้ว / ยังไม่ได้ยืนยัน" คือกฎที่ต้องรักษา
+  ส่วน `accent` / `muted` ถูกใช้กับอย่างอื่นด้วย (ปุ่มหลัก, hint) ชื่อสีจึงไม่พอบอกว่าใช้ได้เมื่อไร
+- ทุก tone มีสัญลักษณ์คู่กับสีเสมอ: `verified` ✓ · `neutral` ○ · `attention` ⚠ · `danger` ✕ — ไม่มี prop ให้ปิด ห้ามพึ่งสีอย่างเดียว
 - **`verified` สงวนไว้ให้ค่าที่ครูแตะจริงเท่านั้น** — ห้ามใช้กับค่าที่ AI กรอกให้แล้วครูยังไม่ได้แตะ (ดู §4.8)
-- error ไม่ใช่ chip — ใช้แถบ `danger` ตามตารางด้านบน
+- **`danger` ใช้ token เดียวกัน แต่มี 2 treatment ที่ห้ามสลับกัน:**
+
+  | | Chip tone `danger` | แถบ error |
+  | --- | --- | --- |
+  | ใช้กับ | ป้ายสั้นในรายการ — สถานะของรายการเดียว | error ของทั้งพื้นที่ — บันทึกไม่สำเร็จ, DB ต่อไม่ติด |
+  | รูปแบบ | พื้นทึบ `danger` + ✕ + ข้อความ `paper` ขนาด `hint` | แถบทึบ `danger` เต็มความกว้างของพื้นที่ที่ล้มเหลว ข้อความ `paper` |
+  | เนื้อหา | คำสั้นบอกสถานะ | **บอกว่าต้องทำอะไรต่อ** ("กดบันทึกร่างอีกครั้ง") |
+  | การหายไป | ตามสถานะของรายการนั้น | **ไม่หายเอง** — หายเมื่อทำสำเร็จจริงเท่านั้น |
+
+  ห้ามย่อ error ของทั้งพื้นที่ให้เหลือแค่ chip — ป้ายเล็กไม่บอกว่าต้องทำอะไรต่อ ครูจะไม่รู้ว่างานยังไม่ถูกบันทึก
 
 **ตารางแทนที่ class เดิม** (ใช้ตอน Phase 5 ไล่แก้ component — ครอบทุก class ที่ grep เจอ ณ 13 ก.ย. 2569)
 
@@ -249,16 +263,35 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 
 | กรณี | เงื่อนไขในโค้ด | tone | ป้ายต้องสื่อว่า |
 | --- | --- | --- | --- |
-| AI มั่นใจ กรอกให้ ครูยังไม่แตะ | `confirmed && !isManual` | **tone กลาง** (`pending` → `muted`, พื้น `ink` 4%, ขอบ `muted`) | **"AI จัดให้ · แตะเพื่อเปลี่ยน"** — ห้ามสื่อว่าเสร็จแล้ว |
-| ครูเลือก/แก้เอง | `confirmed && isManual` | `verified` (`accent`) | "ครูเลือกเอง: …" |
-| AI ไม่มั่นใจ ต้องให้ครูเลือก | `needsTeacher && !err` | `warning` (`attention`) | "⚠️ ช่วยเลือกระดับให้หน่อย" |
-| classifier ล้มเหลว | `err` | แถบ `danger` (ดู B3) | บอกให้ "เลือกระดับเอง" |
+| AI มั่นใจ กรอกให้ ครูยังไม่แตะ | `confirmed && !isManual` | **`neutral`** (`muted`, พื้น `ink` 4%, ขอบ `muted`, ○) | **"AI จัดให้ · แตะเพื่อเปลี่ยน"** — ห้ามสื่อว่าเสร็จแล้ว |
+| ครูเลือก/แก้เอง | `confirmed && isManual` | `verified` (`accent`, ✓) | "ครูเลือกเอง: …" |
+| AI ไม่มั่นใจ ต้องให้ครูเลือก | `needsTeacher && !err` | `attention` (⚠) | "⚠️ ช่วยเลือกระดับให้หน่อย" |
+| classifier ล้มเหลว | `err` | **แถบ `danger` เต็มความกว้าง ไม่ใช่ chip** (error ของทั้งพื้นที่ — ดู §2 และ B3) | บอกให้ "เลือกระดับเอง" |
 
 - **ห้ามใช้ `verified` กับกรณีแรก** — *เหตุผล:* สีของ `verified` อ้างสถานะ "ครูตรวจแล้ว" ที่ไม่เคยเกิดขึ้น
   และพี่เลี้ยงวุฒิ ม.6 จะอ่านว่าด้านนี้เสร็จแล้ว ข้ามได้
 - ทำได้ในขอบเขต visual: `isManual` มีอยู่แล้ว (~231) แค่สลับ className และข้อความป้าย
   การ "แตะเพื่อเปลี่ยน" ใช้ handler เดิมของปุ่ม "ไม่ใช่? แก้ระดับ" (~291–299) — ห้ามเพิ่ม handler หรือ state ใหม่
 - ปุ่มยืนยันจริงยังเป็นเรื่องของ B6 — ข้อนี้ไม่เปลี่ยน flow
+
+### 4.9 `components/ui/` — primitive ที่ใช้ token แล้ว
+
+สร้างเมื่อ 14 ก.ย. 2569 · **ยังไม่มี component หรือ page ไหนเรียกใช้** — การเอาไปแทนของเดิมเป็นงาน Phase 5
+
+| ไฟล์ | export | กติกาที่ฝังอยู่ในตัว |
+| --- | --- | --- |
+| `Button.tsx` | `Button` (default) · type `ButtonProps`, `ButtonVariant`, `ButtonSize` | variant `primary` \| `secondary` \| `ghost` \| `copy` · size `sm` \| `md` · **ทุกตัวสูง ≥ 44px** · focus-visible ring `accent` · ค่าเริ่มต้น `secondary` (§4.2 primary มีได้ปุ่มเดียว) · `type="button"` · `copy` มีไอคอน และป้ายต้องบอกปลายทาง (B1) |
+| `Card.tsx` | `Card` (default) · type `CardProps` | `border border-rule` + `rounded-box` บน `paper` · ไม่มี shadow · prop `title`, `titleAs` (`h2` → `text-title`, `h3` → `text-subtitle`) · หัวการ์ดมีเส้น `rule` ใต้หัวข้อ |
+| `Field.tsx` | **4 export:** `Field` (named + default), `Input`, `Textarea`, `Select` · type `FieldProps` | ลำดับ label → hint → control · **`hint` เป็น prop บังคับ** · `optional` ต่อท้าย "(ไม่บังคับ)" · control ใช้ `border-control` + `text-body` 16px + สูง ≥ 44px · ผูก `htmlFor` / `aria-describedby` ให้เองผ่าน context · กำหนด id เองให้ส่ง `controlId` ที่ `Field` ไม่ใช่ที่ control |
+| `Chip.tsx` | `Chip` (default) · type `ChipProps`, `ChipTone` | tone `verified` \| `neutral` \| `attention` \| `danger` (§2) · **`tone` บังคับ ไม่มีค่าเริ่มต้น** · สัญลักษณ์ ✓ ○ ⚠ ✕ ปิดไม่ได้ + คำบอกสถานะสำหรับ screen reader · Chip ไม่ใช่ปุ่ม — ถ้าต้องแตะได้ให้ห่อด้วย `Button` |
+
+**⚠️ ข้อจำกัด: ไม่มี `tailwind-merge`** — ทุกไฟล์ต่อ className ด้วย `cx()` ที่แค่ต่อ string
+
+- ส่ง class ที่ชนกับ class ภายใน เช่น `<Input className="border-rule" />` → element ได้ทั้ง `border-control` และ `border-rule`
+- **ตัวที่ชนะขึ้นกับลำดับที่ Tailwind สร้างไว้ใน CSS ไม่ใช่ตัวที่ส่งมาทีหลัง** — ผลอาจกลับกันเมื่อ config หรือ class อื่นในโปรเจกต์เปลี่ยน
+- Phase 5 ถ้าส่ง className แล้วหน้าตาไม่เปลี่ยน **อย่าเพิ่งไล่หาบั๊กใน prop หรือ component** — เปิด DevTools ดูว่า class ถูก rule อื่นทับอยู่หรือเปล่า
+- ทางที่ถูก: อย่าส่ง class ที่ชนกับ class ภายใน · ถ้าต้องมีหน้าตาอีกแบบจริงๆ ให้เพิ่ม variant/prop ในไฟล์ `components/ui/` แทน
+- ⚠️ อย่าคิดว่ากฎถูกกันไว้ให้แล้ว — ส่ง `border-rule` ให้ `Input` **อาจชนะ** `border-control` ก็ได้ checklist §7 ข้อ 2 ยังต้องรันเสมอ
 
 ---
 
@@ -270,7 +303,7 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 1. **ห้ามยุบแถบ "AI เสนอ → ครูยืนยัน" เป็น auto-accept**
    ในโค้ดตอนนี้คือ checkbox `isSelected` (เป้าหมาย, `PlanReview.tsx` GoalRow), `isApproved` (สื่อ, MediaRow),
    ปุ่ม "ยืนยันแผน" (`PlanReview.tsx` ~บรรทัด 607–616) และ chip ระดับความสามารถใน `AssessmentForm.tsx` ~บรรทัด 279–315
-   **chip ของค่าที่ AI กรอกให้ (`confidence === "high"`) ห้ามใช้ tone `verified`** — ใช้ tone กลางและป้าย "AI จัดให้ · แตะเพื่อเปลี่ยน" (§4.8)
+   **chip ของค่าที่ AI กรอกให้ (`confidence === "high"`) ห้ามใช้ tone `verified`** — ใช้ tone `neutral` และป้าย "AI จัดให้ · แตะเพื่อเปลี่ยน" (§4.8)
    `verified` สงวนไว้ให้ค่าที่ครูแตะจริงเท่านั้น เพราะสีนั้นอ้างสถานะที่ไม่เคยเกิด และพี่เลี้ยงวุฒิ ม.6 จะอ่านว่าข้ามได้
    *เหตุผล:* ถ้า free text ขับ retrieval ตรงๆ hallucination บนงบเบิกกลับมาเป็นไปได้ทันที
 2. **ห้ามลดตัวเลือกเป้าหมายจาก 2–3 เหลือ 1** และห้ามยุบเป็น accordion/carousel ที่เห็นทีละอัน
@@ -349,7 +382,7 @@ relative luminance ของ `danger` = **0.0913** กับ `attention` = **0.1
 | B3 | **error ของ classifier แสดงเป็นแถบ `danger`** แยกจาก warning | `AssessmentForm.tsx:304–315` ใช้กล่อง amber เดียวกันทั้งกรณี "AI ไม่มั่นใจ" (warning) และ "จัดระดับไม่สำเร็จ/เชื่อมต่อไม่สำเร็จ" (error, state `err`) | ได้ — แยก className ตาม `err` ที่มีอยู่แล้ว |
 | B4 | **error อื่นเป็นแถบ `danger` เต็มความกว้าง ไม่หายเอง** | `app/HomeClient.tsx:126`, `PlanReview.tsx:352`, `StudentPicker.tsx:354`, `app/students/[id]/StudentHistoryClient.tsx:44`, `app/auth/signin/page.tsx:43` ใช้ `red-*` แบบกล่องอ่อน/ข้อความเล็ก | ได้ |
 | B5 | **⚠ inline ในตำแหน่งที่เกี่ยวข้อง** | `consistencyWarnings` เป็น `string[]` รวมที่หัว PlanReview (`:464–475`) ไม่มีข้อมูลว่าผูกกับช่อง/รายการไหน | ไม่ได้ — **ต้องแก้ `lib/types.ts` ให้ warning มีตำแหน่งผูก ซึ่งเป็นไฟล์ร่วม (CONTRACT frontend↔API) ต้องแจ้งทีมก่อน** ระหว่างนี้แสดงรวมที่หัวแบบเดิม |
-| B6 | **chip "ยืนยัน" ในแถบที่ AI เสนอระดับความสามารถ** (44px ตาม §4.4) | ไม่มี — กรณี AI มั่นใจ (`confidence === "high"`) ระบบกรอกเป็นค่าที่ยืนยันแล้วทันที (`AssessmentForm.tsx:129–135`) ครูทำได้แค่กด "ไม่ใช่? แก้ระดับ" · ระหว่างนี้ใช้ tone กลางตาม §4.8 | ไม่ได้ — ต้องเพิ่มขั้นตอนกดยืนยัน (ขัด §5 ข้อ 8–9) ต้องตัดสินใจก่อน |
+| B6 | **chip "ยืนยัน" ในแถบที่ AI เสนอระดับความสามารถ** (44px ตาม §4.4) | ไม่มี — กรณี AI มั่นใจ (`confidence === "high"`) ระบบกรอกเป็นค่าที่ยืนยันแล้วทันที (`AssessmentForm.tsx:129–135`) ครูทำได้แค่กด "ไม่ใช่? แก้ระดับ" · ระหว่างนี้ใช้ tone `neutral` ตาม §4.8 | ไม่ได้ — ต้องเพิ่มขั้นตอนกดยืนยัน (ขัด §5 ข้อ 8–9) ต้องตัดสินใจก่อน |
 | B7 | **ฟอนต์ Sarabun** | ไม่ต้องโหลดจนกว่าจะมี B2 | — |
 | B8 | **ปุ่มคัดลอกต่อรายการสื่อ แยกรายการที่ยังไม่ได้ตรวจให้เห็นชัด** — รายการที่ยังไม่ติ๊ก `isApproved` ใช้ tone `attention` + ⚠ + ป้ายบอกว่ายังไม่ได้ตรวจ (เช่น "⚠ คัดลอก · ยังไม่ได้ตรวจ") **แต่ยังกดได้** · **ห้าม disable ปุ่มหรือบล็อกการคัดลอก** — ขัด §5 ข้อ 5 (ห้าม auto-fix ครูตัดสินเอง) | `PlanReview.tsx:304` คัดลอก `mediaCopyText(media)` โดยไม่เช็ค `isApproved` และปุ่มหน้าตาเหมือนกันทุกรายการ → ครูคัดลอกสื่อที่ยังไม่ได้ตรวจไปวางในระบบคูปองได้ = คำขอเบิกงบที่ไม่มีใครอนุมัติ | ได้ — สลับ className/ข้อความป้ายตาม `media.isApproved` ที่มีอยู่แล้ว ไม่เพิ่ม handler หรือ state |
 
