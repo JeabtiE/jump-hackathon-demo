@@ -1,0 +1,30 @@
+{
+  "pkg": "iep-gen",
+  "globalName": "IepGen",
+  "shape": "package",
+  "buildCmd": "npx tailwindcss -i .design-sync/ds-input.css -o .design-sync/.cache/ds.css --content \"./components/ui/**/*.tsx,./.design-sync/previews/**/*.tsx\"",
+  "entry": ".design-sync/entry.ts",
+  "srcDir": "components/ui",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": ".design-sync/.cache/ds.css",
+  "guidelinesGlob": [],
+  "readmeHeader": ".design-sync/conventions.md",
+  "componentSrcMap": {
+    "Button": "components/ui/Button.tsx",
+    "Card": "components/ui/Card.tsx",
+    "Chip": "components/ui/Chip.tsx",
+    "Field": "components/ui/Field.tsx",
+    "Input": "components/ui/Field.tsx",
+    "Textarea": "components/ui/Field.tsx",
+    "Select": "components/ui/Field.tsx"
+  },
+  "dtsPropsFor": {
+    "Button": "/** primary = action หลักของขั้นนั้น ใช้ได้ปุ่มเดียวต่อหน้าจอ · copy = ปุ่มคัดลอก ป้ายต้องบอกปลายทาง เช่น \"คัดลอกไปวางในระบบ SET\" · ค่าเริ่มต้น secondary */ variant?: \"primary\" | \"secondary\" | \"ghost\" | \"copy\"; /** ทุก size สูงอย่างน้อย 44px ต่างกันแค่ padding และขนาดตัวอักษร · ค่าเริ่มต้น md */ size?: \"sm\" | \"md\"; /** ค่าเริ่มต้น \"button\" */ type?: \"button\" | \"submit\" | \"reset\"; disabled?: boolean; onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void; className?: string; children?: React.ReactNode;",
+    "Card": "/** หัวการ์ด มีเส้นคั่นใต้หัวข้อ · ไม่ใส่ = การ์ดไม่มีหัว */ title?: React.ReactNode; /** h2 ใช้ขนาด title, h3 ใช้ขนาด subtitle · ค่าเริ่มต้น h2 */ titleAs?: \"h2\" | \"h3\"; className?: string; children: React.ReactNode;",
+    "Chip": "/** บังคับ ไม่มีค่าเริ่มต้น · verified = ครูแตะ/ยืนยันเองแล้วเท่านั้น (ห้ามใช้กับค่าที่ AI กรอกให้) · neutral = ยังไม่ได้ยืนยัน เช่น AI จัดให้ · attention = ครูต้องตรวจ · danger = ป้ายสั้นสถานะผิดพลาดของรายการเดียว (error ทั้งพื้นที่ใช้แถบเต็มความกว้าง ไม่ใช่ Chip) */ tone: \"verified\" | \"neutral\" | \"attention\" | \"danger\"; className?: string; children: React.ReactNode;",
+    "Field": "/** ป้ายชื่อช่อง */ label: React.ReactNode; /** บังคับทุกช่อง — คำอธิบายภาษาพูดใต้ label ให้พี่เลี้ยงรู้ว่าต้องกรอกอะไร */ hint: React.ReactNode; /** true = ต่อท้าย label ว่า (ไม่บังคับ) */ optional?: boolean; /** id ของช่องกรอก — กำหนดที่ Field ไม่ใช่ที่ Input */ controlId?: string; className?: string; /** ใส่ Input / Textarea / Select หนึ่งตัว */ children: React.ReactNode;",
+    "Input": "value?: string; defaultValue?: string; onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; type?: string; disabled?: boolean; name?: string; className?: string;",
+    "Textarea": "value?: string; defaultValue?: string; onChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void; placeholder?: string; rows?: number; disabled?: boolean; name?: string; className?: string;",
+    "Select": "value?: string; defaultValue?: string; onChange?: (event: React.ChangeEvent<HTMLSelectElement>) => void; disabled?: boolean; name?: string; className?: string; /** <option> elements */ children: React.ReactNode;"
+  }
+}

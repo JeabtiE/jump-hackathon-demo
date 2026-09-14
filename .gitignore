@@ -50,3 +50,11 @@ mailmap.txt
 # ⚠️ ไฟล์ตั้งค่า Claude Code — เก็บไว้ local เท่านั้น ไม่ commit เข้า repo
 CLAUDE.md
 .claude/
+
+# design-sync (Claude Design) — สคริปต์ที่ stage ไว้ / ผล build / state ของเครื่อง
+# ที่ commit คือไฟล์อื่นใต้ .design-sync/ (config.json, NOTES.md, previews/, ds-input.css ฯลฯ)
+/.ds-sync/
+/ds-bundle/
+/.design-sync/.cache/
+/.design-sync/learnings/
+/.design-sync/node_modules

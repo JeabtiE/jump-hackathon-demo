@@ -1,0 +1,18 @@
+/*
+ * .design-sync/ds-input.css — ต้นทางของ stylesheet ที่ส่งเข้า Claude Design
+ *
+ * compile ด้วย Tailwind CLI (ดู buildCmd ใน .design-sync/config.json) → .design-sync/.cache/ds.css
+ * แล้ว converter ใช้ไฟล์นั้นเป็น cssEntry
+ *
+ * - token / body line-height มาจาก app/globals.css ตรงๆ — ห้าม copy ค่าสีมาไว้ที่นี่ ไม่งั้นจะ rot
+ * - ฟอนต์: แอปจริงโหลดผ่าน next/font ซึ่งใช้นอก Next ไม่ได้
+ *   design system จึงโหลด IBM Plex Sans Thai Looped จาก Google Fonts ตอน render (ตัดสินใจ 14 ก.ย. 2569)
+ *   และตั้ง --font-plex-looped ให้ชี้ชื่อฟอนต์ เพราะนอก Next ตัวแปรนี้ไม่มีค่า
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600;700&display=swap");
+@import "../app/globals.css";
+
+:root {
+  --font-plex-looped: "IBM Plex Sans Thai Looped";
+}
